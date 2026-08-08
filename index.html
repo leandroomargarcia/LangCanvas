@@ -245,9 +245,7 @@
 // ── CONFIG ──────────────────────────────────────────────
 // To enable AI design analysis, paste your backend URL here
 // (see the backend/ folder and its README). Leave empty to use the "copy prompt" mode.
-// Same-origin API on Vercel. On GitHub Pages there is no serverless API,
-// so leave empty to use the "copy prompt" fallback (or paste a Vercel API URL).
-const BACKEND_URL = location.hostname.endsWith('github.io') ? '' : '/api/analyze';
+const BACKEND_URL = '/api/analyze';
 // ────────────────────────────────────────────────────────
 
 let nodes = {};
