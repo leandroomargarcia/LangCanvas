@@ -183,8 +183,6 @@
       <button class="lg-btn" onclick="generateCode()">code</button>
     </div>
     <div class="sep"></div>
-    <div class="lg-hint">Drag from a node's blue dot to another to connect them · build v19</div>
-    <div class="sep"></div>
     <div class="grp">
       <select class="lg-select" id="example-select" onchange="loadExample(this.value)">
         <option value="">load example…</option>
@@ -247,7 +245,9 @@
 // ── CONFIG ──────────────────────────────────────────────
 // To enable AI design analysis, paste your backend URL here
 // (see the backend/ folder and its README). Leave empty to use the "copy prompt" mode.
-const BACKEND_URL = '/api/analyze';
+// Same-origin API on Vercel. On GitHub Pages there is no serverless API,
+// so leave empty to use the "copy prompt" fallback (or paste a Vercel API URL).
+const BACKEND_URL = location.hostname.endsWith('github.io') ? '' : '/api/analyze';
 // ────────────────────────────────────────────────────────
 
 let nodes = {};
@@ -1393,12 +1393,12 @@ async function analyzeDesign() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: buildAnalysisPrompt() }),
     });
+    const data = await response.json().catch(() => ({}));
     if (response.status === 429) {
-      showResults('<div style="color:#BA7517;">too many requests in a row. Wait a minute and try again.</div>');
+      showResults('<div style="color:#BA7517;">' + escapeHtml(data.error || 'Rate limit reached. Please wait and try again.') + '</div>');
       return;
     }
-    if (!response.ok) throw new Error('backend responded ' + response.status);
-    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || ('backend responded ' + response.status));
     if (data.error) throw new Error(data.error);
     showResults('<div style="font-weight:500; margin-bottom:6px;">design critique (AI)</div><div style="white-space:pre-wrap;">' + escapeHtml(data.text || '(no response)') + '</div>');
   } catch (err) {

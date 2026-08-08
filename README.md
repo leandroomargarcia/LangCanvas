@@ -19,11 +19,19 @@ python -m http.server 8765
 
 Without a backend, **Analyze design (AI)** falls back to a copyable prompt.
 
-## Deploy on Vercel
+## Deploy on GitHub Pages (frontend)
+
+Static hosting only — the Gemini API route does **not** run on Pages.
+On `*.github.io`, **Analyze design (AI)** uses the copy-prompt fallback unless you set `BACKEND_URL` to a Vercel API URL.
+
+Pages is enabled via GitHub Actions (`.github/workflows/deploy-pages.yml`).
+Site: `https://leandroomargarcia.github.io/LangCanvas/`
+
+## Deploy on Vercel (frontend + API)
 
 1. Set env var `GEMINI_API_KEY` (from https://aistudio.google.com/apikey)
 2. Deploy this repo (root directory)
-3. The app uses same-origin `BACKEND_URL = '/api/analyze'`
+3. Outside GitHub Pages, the app uses same-origin `/api/analyze`
 
 ```bash
 npx vercel env add GEMINI_API_KEY
