@@ -215,10 +215,10 @@
         <div class="grp" style="margin-bottom:8px;">
           <button class="lg-btn" style="width:100%" onclick="stepRun()">step forward</button>
         </div>
-        <button class="lg-btn" style="width:100%" onclick="resetRun()">reiniciar execution</button>
+        <button class="lg-btn" style="width:100%" onclick="resetRun()">reset execution</button>
         <div id="loop-warn" class="lg-warn" style="display:none;"></div>
         <div style="margin-top:10px;">
-          <h3>historial</h3>
+          <h3>history</h3>
           <div class="lg-log" id="run-log"></div>
         </div>
       </div>
@@ -394,7 +394,7 @@ function renderNodes() {
     if (runCurrent === n.id && n.type === 'router') {
       const outs = edges.filter(e => e.from === n.id);
       inner += '<div class="lg-router-choices">' + outs.map(e =>
-        '<button style="border-color:' + n.color + ';color:' + n.color + '" onclick="chooseBranch(\'' + e.id + '\')">' + escapeHtml(e.label || 'sin etiqueta') + '</button>'
+        '<button style="border-color:' + n.color + ';color:' + n.color + '" onclick="chooseBranch(\'' + e.id + '\')">' + escapeHtml(e.label || 'unlabeled') + '</button>'
       ).join('') + '</div>';
     }
     el.innerHTML = inner;
@@ -824,7 +824,7 @@ function logEntry(text) {
   runSteps += 1;
   runLog.unshift({ step: runSteps, text });
   const el = document.getElementById('run-log');
-  el.innerHTML = runLog.map(l => '<div class="entry"><span class="step-n">paso ' + l.step + '</span> — ' + escapeHtml(l.text) + '</div>').join('');
+  el.innerHTML = runLog.map(l => '<div class="entry"><span class="step-n">step ' + l.step + '</span> — ' + escapeHtml(l.text) + '</div>').join('');
 }
 
 function stepRun() {
@@ -855,7 +855,7 @@ function stepRun() {
     return;
   }
   if (outs.length === 0) {
-    logEntry('el node "' + n.label + '" no tiene salida. execution detenida.');
+    logEntry('the node "' + n.label + '" has no outgoing connection. Execution stopped.');
     return;
   }
   const next = outs[0].to;
@@ -865,7 +865,7 @@ function stepRun() {
 function chooseBranch(edgeId) {
   const e = edges.find(x => x.id === edgeId);
   if (!e) return;
-  advanceTo(e.to, 'took branch "' + (e.label || 'sin etiqueta') + '"');
+  advanceTo(e.to, 'took branch "' + (e.label || 'unlabeled') + '"');
 }
 
 function advanceTo(nextId, extraNote) {
@@ -990,16 +990,15 @@ function runStructuralValidation() {
   const cycles = findAllCycles();
   cycles.forEach(cycle => {
     const labels = cycle.map(cid => nodes[cid] ? nodes[cid].label : cid);
+    const path = '"' + labels.join(' → ') + '"';
     const hasRouter = cycle.some(cid => nodes[cid] && nodes[cid].type === 'router');
     if (!hasRouter) {
-      errors.push('the cycle ' + labels.join(' → ') + ' does not pass through any conditional: infinite loop.');
+      errors.push('the cycle ' + path + ' does not pass through any conditional: infinite loop.');
       cycle.forEach(cid => badNodes.add(cid));
     } else {
-      const routerIds = cycle.filter(cid => nodes[cid] && nodes[cid].type === 'router');
-      const routerReadsVars = routerIds.some(rid => stateVarNames().some(v => mentionsVar(nodes[rid].label, v)));
       const cycleWritesState = cycle.some(cid => nodes[cid] && nodes[cid].type === 'action' && nodes[cid].effect && nodes[cid].effect.trim());
       if (!cycleWritesState) {
-        warnings.push('the loop ' + labels.join(' → ') + ' has a conditional but no node in the cycle modifies the state: it probably never stops.');
+        warnings.push('the loop ' + path + ' has a conditional but no node in the cycle modifies the state: it probably never stops.');
       }
     }
   });
@@ -1093,19 +1092,19 @@ function loadExample(key) {
     const plan = addNode('action', 260, 40, 'plan'); nodes[plan].effect = 'decide what to search';
     const tool = addNode('action', 260, 170, 'search'); nodes[tool].effect = 'increment attempts by 1';
     const ev = addNode('router', 260, 300, 'evaluate');
-    const end = addNode('end', 500, 300, 'fin');
+    const end = addNode('end', 500, 300, 'end');
     edges.push({ id: uid('e'), from: 'start', to: plan, label: '' });
     edges.push({ id: uid('e'), from: plan, to: tool, label: '' });
     edges.push({ id: uid('e'), from: tool, to: ev, label: '' });
     edges.push({ id: uid('e'), from: ev, to: plan, label: 'retry' });
     edges.push({ id: uid('e'), from: ev, to: end, label: 'enough' });
-    stateVars = [{ key: 'intentos', val: '0' }, { key: 'enough', val: 'false' }];
+    stateVars = [{ key: 'attempts', val: '0' }, { key: 'enough', val: 'false' }];
   } else if (key === 'simple') {
     const check = addNode('router', 260, 60, 'has data?');
     const a = addNode('action', 480, 0, 'answer directly');
     const b = addNode('action', 480, 140, 'search first');
-    const end1 = addNode('end', 700, 0, 'fin');
-    const end2 = addNode('end', 700, 140, 'fin');
+    const end1 = addNode('end', 700, 0, 'end');
+    const end2 = addNode('end', 700, 140, 'end');
     edges.push({ id: uid('e'), from: 'start', to: check, label: '' });
     edges.push({ id: uid('e'), from: check, to: a, label: 'yes' });
     edges.push({ id: uid('e'), from: check, to: b, label: 'no' });
@@ -1117,7 +1116,7 @@ function loadExample(key) {
     const c2 = addNode('router', 500, 60, 'needs tool?');
     const direct = addNode('action', 740, 0, 'respond');
     const useTool = addNode('action', 740, 140, 'use tool');
-    const end = addNode('end', 950, 60, 'fin');
+    const end = addNode('end', 950, 60, 'end');
     edges.push({ id: uid('e'), from: 'start', to: c1, label: '' });
     edges.push({ id: uid('e'), from: c1, to: c2, label: 'yes' });
     edges.push({ id: uid('e'), from: c1, to: ask, label: 'no' });
@@ -1165,7 +1164,7 @@ function importJSONPrompt() {
         const data = JSON.parse(reader.result);
         loadGraphData(data);
       } catch (err) {
-        showResults('<div style="color:#C0392B;">no se pudo leer el archivo: ' + escapeHtml(String(err)) + '</div>');
+        showResults('<div style="color:#C0392B;">could not read the file: ' + escapeHtml(String(err)) + '</div>');
       }
     };
     reader.readAsText(file);
@@ -1272,7 +1271,7 @@ function generateCode() {
   // Give each router's branch labels safe python string keys, unique per router
   function branchKey(edge, idx) {
     const raw = (edge.label || '').trim();
-    return raw || ('rama_' + (idx + 1));
+    return raw || ('branch_' + (idx + 1));
   }
 
   const stateKeys = stateVars.map(v => (v.key || '').trim()).filter(Boolean);
@@ -1389,7 +1388,13 @@ async function analyzeDesign() {
     const response = await fetch(BACKEND_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: buildAnalysisPrompt() }),
+      body: JSON.stringify({
+        prompt: buildAnalysisPrompt(),
+        metadata: {
+          problem: problem,
+          graph: serializeGraph(),
+        },
+      }),
     });
     const data = await response.json().catch(() => ({}));
     if (response.status === 429) {
@@ -1425,7 +1430,7 @@ function showResults(html) {
 
 buildMarkerDefs();
 ensureStartNode();
-addStateRow('intentos', '0');
+addStateRow('attempts', '0');
 renderNodes();
 </script>
 </body>
