@@ -1,0 +1,1434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LangCanvas — LangGraph simulator</title>
+<style>
+  :root {
+    --paper: #F8F8FC;
+    --paper-line: #E9E7F5;
+    --ink: #26262E;
+    --ink-soft: #7A798A;
+    --card: #FFFFFF;
+    --line: #E4E2EF;
+    --line-strong: #C7C4DC;
+    --accent: #6C5CE0;
+  }
+  body { margin: 16px; background: var(--paper); }
+  * { box-sizing: border-box; }
+  .lg-wrap {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .lg-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    padding: 10px 12px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  .lg-toolbar .grp { display: flex; gap: 6px; align-items: center; }
+  .lg-toolbar .sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+  button.lg-btn {
+    font-family: inherit;
+    font-size: 12.5px;
+    padding: 7px 11px;
+    border-radius: 7px;
+    border: 1px solid var(--line-strong);
+    background: var(--card);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  button.lg-btn:hover { background: var(--paper); }
+  button.lg-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.lg-btn.warn { border-color: #B84B3E; color: #B84B3E; }
+  select.lg-select {
+    font-family: inherit; font-size: 12.5px; padding: 6px 8px;
+    border-radius: 7px; border: 1px solid var(--line-strong); background: var(--card);
+  }
+  .lg-body { display: flex; gap: 12px; align-items: flex-start; }
+  .lg-side {
+    width: 230px; flex-shrink: 0;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .lg-panel {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px;
+  }
+  .lg-panel h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; }
+  .lg-state-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+  .lg-state-row input {
+    font-family: inherit; font-size: 12.5px; padding: 5px 7px;
+    border: 1px solid var(--line-strong); border-radius: 6px; background: var(--paper);
+  }
+  .lg-state-row input.k { width: 88px; }
+  .lg-state-row input.v { flex: 1; min-width: 0; }
+  .lg-state-row .rm { cursor: pointer; color: var(--ink-soft); font-size: 15px; padding: 0 3px; }
+  .lg-log { font-size: 12.5px; line-height: 1.55; max-height: 260px; overflow-y: auto; }
+  .lg-log .entry { padding: 5px 0; border-bottom: 1px solid var(--paper-line); }
+  .lg-log .entry:last-child { border-bottom: none; }
+  .lg-log .step-n { color: var(--accent); font-weight: 600; }
+  .lg-warn { color: #B84B3E; font-size: 12.5px; margin-top: 4px; }
+  .lg-canvas-outer {
+    flex: 1; min-width: 0; height: 480px; overflow: auto;
+    border: 1px solid var(--line); border-radius: 10px;
+    background-color: var(--paper);
+    background-image: radial-gradient(var(--line) 1px, transparent 1px);
+    background-size: 22px 22px;
+    position: relative;
+  }
+  .lg-canvas {
+    position: relative; width: 1400px; height: 900px;
+    transform-origin: 0 0;
+  }
+  .lg-zoom-glass {
+    position: absolute; bottom: 16px; right: 16px; z-index: 30;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 6px; border-radius: 14px;
+    background: rgba(255,255,255,0.45);
+    backdrop-filter: blur(12px) saturate(150%);
+    -webkit-backdrop-filter: blur(12px) saturate(150%);
+    border: 1px solid rgba(255,255,255,0.6);
+    box-shadow: 0 4px 20px rgba(30,20,60,0.12);
+  }
+  .lg-zoom-glass button {
+    width: 34px; height: 34px; border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.5);
+    background: rgba(255,255,255,0.35);
+    color: var(--ink); font-size: 18px; font-weight: 500; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .12s ease;
+  }
+  .lg-zoom-glass button:hover { background: rgba(255,255,255,0.75); }
+  .lg-zoom-glass button.reset { font-size: 15px; }
+  .lg-zoom-glass #zoom-label { font-size: 11px; color: var(--ink-soft); font-weight: 500; padding: 1px 0; }
+  svg.lg-edges { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  .lg-node {
+    position: absolute; min-width: 128px; padding: 12px 18px;
+    border-radius: 16px; background: var(--card); border: 2px solid var(--line-strong);
+    cursor: grab; user-select: none; box-shadow: 0 1px 3px rgba(30,20,60,.06);
+    font-size: 13.5px; text-align: center; font-weight: 600;
+    transition: box-shadow .12s ease;
+  }
+  .lg-node.dragging { cursor: grabbing; box-shadow: 0 6px 18px rgba(30,20,60,.14); z-index: 5; }
+  .lg-node.n-action { border-radius: 5px; }
+  .lg-node.n-router { border-radius: 26px; border-style: dashed; }
+  .lg-node.n-start, .lg-node.n-end { border-radius: 999px; padding: 14px 30px; }
+  .lg-node.active-run { outline: 3px solid #E0A72E; outline-offset: 3px; }
+  .lg-node.drop-target { outline: 2px dashed var(--accent); outline-offset: 4px; }
+  .lg-node.problem { outline: 2.5px solid #E24B4A; outline-offset: 3px; }
+  .lg-handle {
+    position: absolute; right: -8px; top: 50%; transform: translateY(-50%);
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--accent); border: 2px solid #fff; cursor: crosshair;
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .lg-handle:hover { background: #2C6690; }
+  .lg-hint { font-size: 12px; color: var(--ink-soft); }
+  .lg-node .lg-effect { font-size: 11px; color: var(--ink-soft); margin-top: 4px; font-style: italic; font-weight: 400; }
+  .lg-router-choices { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; margin-top: 6px; }
+  .lg-router-choices button {
+    font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 12px; border: 1px solid var(--accent);
+    background: #fff; color: var(--accent); cursor: pointer;
+  }
+  .lg-run-current { font-size: 12.5px; padding: 8px 10px; background: #FFF7E6; border: 1px solid #E6C778; border-radius: 8px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+  .lg-inline-editor {
+    position: absolute; z-index: 20; background: #fff; border: 1px solid var(--line-strong);
+    border-radius: 10px; padding: 10px; box-shadow: 0 6px 20px rgba(30,20,60,.16);
+    font-weight: 400; text-align: left; min-width: 200px;
+  }
+  .lg-inline-editor .field { margin-bottom: 8px; }
+  .lg-inline-editor .field label { display: block; font-size: 11px; color: var(--ink-soft); margin-bottom: 3px; }
+  .lg-inline-editor .field input {
+    width: 100%; font-family: inherit; font-size: 12.5px; padding: 6px 8px;
+    border: 1px solid var(--line-strong); border-radius: 6px; background: var(--paper);
+  }
+  .lg-inline-editor .actions { display: flex; gap: 6px; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<div class="lg-wrap">
+  <h2 class="sr-only">Visual simulator to practice designing LangGraph-style state graphs by dragging and connecting nodes</h2>
+
+  <div class="lg-toolbar">
+    <div class="grp">
+      <button class="lg-btn" onclick="addNode('action')">+ action</button>
+      <button class="lg-btn" onclick="addNode('router')">+ conditional</button>
+      <button class="lg-btn" onclick="addNode('end')">+ end</button>
+    </div>
+    <div class="sep"></div>
+    <div class="grp">
+      <button class="lg-btn" id="delete-btn" onclick="toggleMode('delete')">delete</button>
+    </div>
+    <div class="sep"></div>
+    <div class="grp">
+      <button class="lg-btn" onclick="validateGraph()">validate graph</button>
+      <button class="lg-btn" onclick="analyzeDesign()">analyze design (AI)</button>
+    </div>
+    <div class="sep"></div>
+    <div class="grp">
+      <button class="lg-btn" onclick="exportPNG()">PNG</button>
+      <button class="lg-btn" onclick="exportSVG()">SVG</button>
+      <button class="lg-btn" onclick="exportJSON()">JSON</button>
+      <button class="lg-btn" onclick="importJSONPrompt()">import</button>
+      <button class="lg-btn" onclick="generateCode()">code</button>
+    </div>
+    <div class="sep"></div>
+    <div class="lg-hint">Drag from a node's blue dot to another to connect them · build v19</div>
+    <div class="sep"></div>
+    <div class="grp">
+      <select class="lg-select" id="example-select" onchange="loadExample(this.value)">
+        <option value="">load example…</option>
+        <option value="retry">retry loop</option>
+        <option value="simple">simple conditional branch</option>
+        <option value="chained">chained conditionals</option>
+      </select>
+      <button class="lg-btn warn" id="reset-all-btn" onclick="resetAll()">reset all</button>
+    </div>
+  </div>
+
+  <div class="lg-body">
+    <div class="lg-side">
+      <div class="lg-panel">
+        <h3>problem to solve</h3>
+        <textarea id="problem-desc" placeholder="Describe what problem this graph is meant to solve (e.g. 'an agent that answers questions about invoices, searching a database and retrying if it finds nothing')" style="width:100%; min-height:64px; font-family:inherit; font-size:12.5px; padding:7px 8px; border:1px solid var(--line-strong); border-radius:6px; background:var(--paper); resize:vertical;"></textarea>
+      </div>
+      <div class="lg-panel">
+        <h3>shared state</h3>
+        <div id="state-list"></div>
+        <button class="lg-btn" style="width:100%; margin-top:4px;" onclick="addStateRow()">+ variable</button>
+      </div>
+      <div class="lg-panel" id="results-panel" style="display:none;">
+        <h3>results</h3>
+        <div id="results-content" style="font-size:12.5px; line-height:1.5;"></div>
+      </div>
+      <div class="lg-panel">
+        <h3>execution</h3>
+        <div id="run-current" class="lg-run-current" style="display:none; margin-bottom:8px;"></div>
+        <div class="grp" style="margin-bottom:8px;">
+          <button class="lg-btn" style="width:100%" onclick="stepRun()">step forward</button>
+        </div>
+        <button class="lg-btn" style="width:100%" onclick="resetRun()">reiniciar execution</button>
+        <div id="loop-warn" class="lg-warn" style="display:none;"></div>
+        <div style="margin-top:10px;">
+          <h3>historial</h3>
+          <div class="lg-log" id="run-log"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="lg-canvas-outer" id="canvas-outer">
+      <div class="lg-canvas" id="canvas">
+        <svg class="lg-edges" id="edge-svg">
+          <defs id="edge-defs"></defs>
+        </svg>
+        <div id="inline-editor" class="lg-inline-editor" style="display:none;"></div>
+      </div>
+      <div class="lg-zoom-glass">
+        <button onclick="zoomBy(0.1)" title="zoom in">+</button>
+        <span id="zoom-label">100%</span>
+        <button onclick="zoomBy(-0.1)" title="zoom out">−</button>
+        <button onclick="zoomReset()" title="reset zoom" class="reset">⤢</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────
+// To enable AI design analysis, paste your backend URL here
+// (see the backend/ folder and its README). Leave empty to use the "copy prompt" mode.
+const BACKEND_URL = '/api/analyze';
+// ────────────────────────────────────────────────────────
+
+let nodes = {};
+let edges = [];
+let nodeSeq = 0;
+let colorSeq = 0;
+let mode = null;
+let edgeDraw = null;
+let dragging = null;
+let dragOffset = { x: 0, y: 0 };
+let stateVars = [];
+let runCurrent = null;
+let runSteps = 0;
+let visitCounts = {};
+let runLog = [];
+
+const START_COLOR = '#6C5CE0';
+const END_COLOR = '#1F5C7A';
+const PALETTE = ['#2FA876', '#E08A2E', '#D14F98', '#3BA9C9', '#8B6FE0', '#C2574A'];
+
+function nextColor(type) {
+  if (type === 'start') return START_COLOR;
+  if (type === 'end') return END_COLOR;
+  const c = PALETTE[colorSeq % PALETTE.length];
+  colorSeq += 1;
+  return c;
+}
+
+function hexToRgba(hex, alpha) {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16), g = parseInt(h.substring(2, 4), 16), b = parseInt(h.substring(4, 6), 16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+}
+
+function markerId(hex) { return 'arrow-' + hex.replace('#', ''); }
+
+function buildMarkerDefs() {
+  const defs = document.getElementById('edge-defs');
+  [START_COLOR, END_COLOR, ...PALETTE].forEach(hex => {
+    const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+    marker.setAttribute('id', markerId(hex));
+    marker.setAttribute('viewBox', '0 0 10 10');
+    marker.setAttribute('refX', '8'); marker.setAttribute('refY', '5');
+    marker.setAttribute('markerWidth', '6'); marker.setAttribute('markerHeight', '6');
+    marker.setAttribute('orient', 'auto-start-reverse');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M0 0L10 5L0 10Z');
+    path.setAttribute('fill', hex);
+    marker.appendChild(path);
+    defs.appendChild(marker);
+  });
+}
+
+function uid(prefix) { nodeSeq += 1; return prefix + '_' + nodeSeq; }
+
+function openInlineEditor(x, y, fields, onSave) {
+  const box = document.getElementById('inline-editor');
+  box.style.left = x + 'px';
+  box.style.top = y + 'px';
+  box.style.display = 'block';
+  box.innerHTML = '';
+  const inputs = {};
+  fields.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'field';
+    const lbl = document.createElement('label');
+    lbl.textContent = f.label;
+    const inp = document.createElement('input');
+    inp.value = f.value || '';
+    if (f.placeholder) inp.placeholder = f.placeholder;
+    inp.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); save(); }
+      if (ev.key === 'Escape') { ev.preventDefault(); closeInlineEditor(); }
+    });
+    inputs[f.key] = inp;
+    row.appendChild(lbl);
+    row.appendChild(inp);
+    box.appendChild(row);
+  });
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'lg-btn';
+  saveBtn.textContent = 'save';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'lg-btn';
+  cancelBtn.textContent = 'cancel';
+  function save() {
+    const vals = {};
+    Object.keys(inputs).forEach(k => vals[k] = inputs[k].value);
+    closeInlineEditor();
+    onSave(vals);
+  }
+  saveBtn.onclick = save;
+  cancelBtn.onclick = () => closeInlineEditor();
+  actions.appendChild(saveBtn);
+  actions.appendChild(cancelBtn);
+  box.appendChild(actions);
+  const first = Object.values(inputs)[0];
+  if (first) { first.focus(); first.select(); }
+}
+
+function closeInlineEditor() {
+  const box = document.getElementById('inline-editor');
+  box.style.display = 'none';
+  box.innerHTML = '';
+}
+
+function addNode(type, x, y, label) {
+  const id = uid(type);
+  const defaultLabel = type === 'action' ? 'new action' : type === 'router' ? 'evaluate' : 'end';
+  nodes[id] = {
+    id, type,
+    label: label || defaultLabel,
+    effect: '',
+    color: nextColor(type),
+    x: x != null ? x : 80 + (Object.keys(nodes).length % 5) * 40,
+    y: y != null ? y : 80 + (Object.keys(nodes).length % 5) * 90,
+  };
+  renderNodes();
+  return id;
+}
+
+function ensureStartNode() {
+  if (!nodes['start']) {
+    nodes['start'] = { id: 'start', type: 'start', label: 'start', effect: '', color: START_COLOR, x: 40, y: 40 };
+  }
+}
+
+function renderNodes() {
+  const canvas = document.getElementById('canvas');
+  canvas.querySelectorAll('.lg-node').forEach(el => el.remove());
+  Object.values(nodes).forEach(n => {
+    const el = document.createElement('div');
+    el.className = 'lg-node n-' + n.type;
+    el.style.left = n.x + 'px';
+    el.style.top = n.y + 'px';
+    el.style.borderColor = n.color;
+    el.style.background = hexToRgba(n.color, 0.09);
+    el.style.color = n.color;
+    el.dataset.id = n.id;
+    let inner = '<div class="lg-node-label">' + escapeHtml(n.label) + '</div>';
+    if (n.type === 'action' && n.effect) {
+      inner += '<div class="lg-effect">' + escapeHtml(n.effect) + '</div>';
+    }
+    if (runCurrent === n.id && n.type === 'router') {
+      const outs = edges.filter(e => e.from === n.id);
+      inner += '<div class="lg-router-choices">' + outs.map(e =>
+        '<button style="border-color:' + n.color + ';color:' + n.color + '" onclick="chooseBranch(\'' + e.id + '\')">' + escapeHtml(e.label || 'sin etiqueta') + '</button>'
+      ).join('') + '</div>';
+    }
+    el.innerHTML = inner;
+    if (runCurrent === n.id) el.classList.add('active-run');
+    el.addEventListener('mousedown', (ev) => onNodeMouseDown(ev, n.id));
+    el.addEventListener('click', (ev) => onNodeClick(ev, n.id));
+    el.addEventListener('dblclick', (ev) => onNodeDblClick(ev, n.id));
+    if (n.type !== 'end' && mode !== 'delete') {
+      const handle = document.createElement('div');
+      handle.className = 'lg-handle';
+      handle.style.background = n.color;
+      handle.style.boxShadow = '0 0 0 1px ' + n.color;
+      handle.title = 'drag to connect';
+      handle.addEventListener('mousedown', (ev) => onHandleMouseDown(ev, n.id));
+      el.appendChild(handle);
+    }
+    canvas.appendChild(el);
+  });
+  renderEdges();
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML;
+}
+
+function nodeCenter(id) {
+  const n = nodes[id];
+  const el = document.querySelector('.lg-node[data-id="' + id + '"]');
+  const w = el ? el.offsetWidth : 130;
+  const h = el ? el.offsetHeight : 50;
+  return { x: n.x + w / 2, y: n.y + h / 2, w, h };
+}
+
+function nodeRect(id) {
+  const c = nodeCenter(id);
+  const n = nodes[id];
+  return { x: n.x, y: n.y, w: c.w, h: c.h };
+}
+
+function segmentIntersectsRect(x1, y1, x2, y2, rect) {
+  const pad = 10;
+  const rx = rect.x - pad, ry = rect.y - pad, rw = rect.w + pad * 2, rh = rect.h + pad * 2;
+  const steps = 16;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const px = x1 + (x2 - x1) * t, py = y1 + (y2 - y1) * t;
+    if (px > rx && px < rx + rw && py > ry && py < ry + rh) return true;
+  }
+  return false;
+}
+
+function anchorPoint(id, side, margin) {
+  const r = nodeRect(id);
+  const m = margin || 0;
+  if (side === 'right') return { x: r.x + r.w + m, y: r.y + r.h / 2 };
+  if (side === 'left') return { x: r.x - m, y: r.y + r.h / 2 };
+  if (side === 'top') return { x: r.x + r.w / 2, y: r.y - m };
+  return { x: r.x + r.w / 2, y: r.y + r.h + m };
+}
+
+function chooseSides(dx, dy) {
+  const BIAS = 36;
+  if (Math.abs(dx) > Math.abs(dy) + BIAS) {
+    return dx >= 0 ? { exitSide: 'right', entrySide: 'left' } : { exitSide: 'left', entrySide: 'right' };
+  }
+  return dy >= 0 ? { exitSide: 'bottom', entrySide: 'top' } : { exitSide: 'top', entrySide: 'bottom' };
+}
+
+function leftBiasedPerp(ux, uy) {
+  let px = -uy, py = ux;
+  if (px > 0 || (px === 0 && py > 0)) { px = -px; py = -py; }
+  return { px, py };
+}
+
+function pointsMidOnPath(points) {
+  let total = 0;
+  const segs = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const len = Math.hypot(points[i + 1][0] - points[i][0], points[i + 1][1] - points[i][1]);
+    segs.push(len); total += len;
+  }
+  let target = total / 2, acc = 0;
+  for (let i = 0; i < segs.length; i++) {
+    if (acc + segs[i] >= target) {
+      const t = segs[i] === 0 ? 0 : (target - acc) / segs[i];
+      return { x: points[i][0] + (points[i + 1][0] - points[i][0]) * t, y: points[i][1] + (points[i + 1][1] - points[i][1]) * t };
+    }
+    acc += segs[i];
+  }
+  return { x: points[0][0], y: points[0][1] };
+}
+
+function buildOrthogonalPath(x1, y1, x2, y2, offsetMag, perp) {
+  const dx = x2 - x1, dy = y2 - y1;
+  let raw;
+  if (Math.abs(dy) + 30 >= Math.abs(dx)) {
+    if (offsetMag) {
+      const ox = x1 + perp.px * offsetMag;
+      raw = [[x1, y1], [ox, y1], [ox, y2], [x2, y2]];
+    } else {
+      const breakY = y1 + 22;
+      raw = [[x1, y1], [x1, breakY], [x2, breakY], [x2, y2]];
+    }
+  } else {
+    if (offsetMag) {
+      const oy = y1 + perp.py * offsetMag;
+      raw = [[x1, y1], [x1, oy], [x2, oy], [x2, y2]];
+    } else {
+      const breakX = x1 + (dx > 0 ? 22 : -22);
+      raw = [[x1, y1], [breakX, y1], [breakX, y2], [x2, y2]];
+    }
+  }
+  const points = raw.filter((p, i) => i === 0 || Math.abs(p[0] - raw[i - 1][0]) > 0.5 || Math.abs(p[1] - raw[i - 1][1]) > 0.5);
+  const d = 'M ' + points.map(p => p[0] + ' ' + p[1]).join(' L ');
+  return { d, points, mid: pointsMidOnPath(points) };
+}
+
+function pathBlocked(points, obstacles) {
+  for (let i = 0; i < points.length - 1; i++) {
+    const [px1, py1] = points[i], [px2, py2] = points[i + 1];
+    if (obstacles.some(r => segmentIntersectsRect(px1, py1, px2, py2, r))) return true;
+  }
+  return false;
+}
+
+const edgeRouteCache = {};
+const edgeBusCache = {};
+let zoom = 1;
+
+function renderEdges(dragMode) {
+  const svg = document.getElementById('edge-svg');
+  svg.querySelectorAll('.lg-edge-path, .lg-edge-hit, .lg-edge-label, .lg-edge-delete').forEach(el => el.remove());
+  const pairSeen = {};
+  edges.forEach(e => {
+    if (!nodes[e.from] || !nodes[e.to]) return;
+    const pairKey = [e.from, e.to].slice().sort().join('|');
+    const pairIdx = pairSeen[pairKey] || 0;
+    pairSeen[pairKey] = pairIdx + 1;
+
+    const a = nodeCenter(e.from);
+    const b = nodeCenter(e.to);
+    const dx = b.x - a.x, dy = b.y - a.y;
+
+    const straightSides = chooseSides(dx, dy);
+    const sp1 = anchorPoint(e.from, straightSides.exitSide, 3);
+    const sp2 = anchorPoint(e.to, straightSides.entrySide, 9);
+    const straightGeo = buildOrthogonalPath(sp1.x, sp1.y, sp2.x, sp2.y, 0, { px: 0, py: 0 });
+
+    let useLateral;
+    if (dragMode && edgeRouteCache[e.id] !== undefined) {
+      useLateral = edgeRouteCache[e.id];
+    } else {
+      const obstacles = Object.keys(nodes).filter(id => id !== e.from && id !== e.to).map(id => nodeRect(id));
+      useLateral = pathBlocked(straightGeo.points, obstacles) || pairIdx > 0;
+      edgeRouteCache[e.id] = useLateral;
+    }
+
+    let geo;
+    if (useLateral) {
+      const lane = pairIdx;
+      const exit = anchorPoint(e.from, 'right', 3);
+      const entry = anchorPoint(e.to, 'right', 9);
+      let busX;
+      if (dragMode && edgeBusCache[e.id] !== undefined) {
+        busX = edgeBusCache[e.id];
+      } else {
+        const graphRight = Math.max.apply(null, Object.keys(nodes)
+          .filter(id => !(dragMode && id === dragging))
+          .map(id => { const r = nodeRect(id); return r.x + r.w; }));
+        busX = graphRight + 50 + lane * 34;
+        edgeBusCache[e.id] = busX;
+      }
+      const pts = [[exit.x, exit.y], [busX, exit.y], [busX, entry.y], [entry.x, entry.y]];
+      const d = 'M ' + pts.map(p => p[0] + ' ' + p[1]).join(' L ');
+      geo = { d, points: pts, mid: pointsMidOnPath(pts) };
+    } else {
+      geo = straightGeo;
+    }
+
+    const color = nodes[e.from].color;
+    const hit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    hit.setAttribute('d', geo.d); hit.setAttribute('fill', 'none');
+    hit.setAttribute('stroke', 'transparent'); hit.setAttribute('stroke-width', '14');
+    hit.setAttribute('class', 'lg-edge-hit'); hit.style.pointerEvents = 'stroke'; hit.style.cursor = 'pointer';
+    hit.addEventListener('click', () => onEdgeClick(e.id));
+    hit.addEventListener('dblclick', (ev) => { ev.stopPropagation(); onEdgeDblClick(e.id); });
+    svg.appendChild(hit);
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', geo.d); path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', color); path.setAttribute('stroke-width', '1.6');
+    path.setAttribute('stroke-dasharray', '5 4');
+    path.setAttribute('stroke-linejoin', 'round');
+    path.setAttribute('marker-end', 'url(#' + markerId(color) + ')'); path.setAttribute('class', 'lg-edge-path');
+    svg.appendChild(path);
+    const mid = geo.mid;
+    if (e.label) {
+      const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      txt.setAttribute('x', mid.x); txt.setAttribute('y', mid.y - 6);
+      txt.setAttribute('font-size', '11'); txt.setAttribute('fill', color); txt.setAttribute('font-weight', '600');
+      txt.setAttribute('text-anchor', 'middle'); txt.setAttribute('class', 'lg-edge-label');
+      txt.textContent = e.label;
+      svg.appendChild(txt);
+    }
+    const delX = mid.x, delY = e.label ? mid.y + 12 : mid.y;
+    const delGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    delGroup.setAttribute('class', 'lg-edge-delete');
+    delGroup.style.cursor = 'pointer';
+    delGroup.style.pointerEvents = 'auto';
+    delGroup.addEventListener('click', (ev) => { ev.stopPropagation(); edges = edges.filter(x => x.id !== e.id); renderEdges(); });
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', delX); circle.setAttribute('cy', delY); circle.setAttribute('r', '8');
+    circle.setAttribute('fill', '#fff'); circle.setAttribute('stroke', color); circle.setAttribute('stroke-width', '1.3');
+    delGroup.appendChild(circle);
+    const xtxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    xtxt.setAttribute('x', delX); xtxt.setAttribute('y', delY + 3.5);
+    xtxt.setAttribute('text-anchor', 'middle'); xtxt.setAttribute('font-size', '10'); xtxt.setAttribute('fill', color); xtxt.setAttribute('font-weight', '700');
+    xtxt.textContent = '×';
+    delGroup.appendChild(xtxt);
+    svg.appendChild(delGroup);
+  });
+}
+
+function onEdgeDblClick(edgeId) {
+  const edge = edges.find(x => x.id === edgeId);
+  if (!edge || !nodes[edge.to]) return;
+  const t = nodes[edge.to];
+  openInlineEditor(t.x, t.y + 62, [{ key: 'label', label: 'label for this connection', value: edge.label || '' }], (vals) => {
+    edge.label = vals.label || '';
+    renderEdges();
+  });
+}
+
+function onNodeMouseDown(ev, id) {
+  if (mode === 'delete') return;
+  dragging = id;
+  const el = ev.currentTarget;
+  el.classList.add('dragging');
+  const pt = clientToCanvas(ev);
+  dragOffset.x = pt.x - nodes[id].x;
+  dragOffset.y = pt.y - nodes[id].y;
+  ev.preventDefault();
+}
+
+document.addEventListener('mousemove', (ev) => {
+  if (!dragging) return;
+  const pt = clientToCanvas(ev);
+  let x = pt.x - dragOffset.x;
+  let y = pt.y - dragOffset.y;
+  x = Math.max(0, x); y = Math.max(0, y);
+  nodes[dragging].x = x; nodes[dragging].y = y;
+  const el = document.querySelector('.lg-node[data-id="' + dragging + '"]');
+  if (el) { el.style.left = x + 'px'; el.style.top = y + 'px'; }
+  renderEdges(true);
+});
+
+document.addEventListener('mouseup', () => {
+  if (dragging) {
+    const el = document.querySelector('.lg-node[data-id="' + dragging + '"]');
+    if (el) el.classList.remove('dragging');
+    dragging = null;
+    Object.keys(edgeRouteCache).forEach(k => delete edgeRouteCache[k]);
+    Object.keys(edgeBusCache).forEach(k => delete edgeBusCache[k]);
+    renderEdges();
+  }
+});
+
+function onNodeClick(ev, id) {
+  if (mode === 'delete') {
+    delete nodes[id];
+    edges = edges.filter(e => e.from !== id && e.to !== id);
+    renderNodes();
+  }
+}
+
+function clientToCanvas(ev) {
+  const canvasOuter = document.getElementById('canvas-outer');
+  const outerRect = canvasOuter.getBoundingClientRect();
+  return {
+    x: (ev.clientX - outerRect.left + canvasOuter.scrollLeft) / zoom,
+    y: (ev.clientY - outerRect.top + canvasOuter.scrollTop) / zoom,
+  };
+}
+
+function applyZoom() {
+  const canvas = document.getElementById('canvas');
+  canvas.style.transform = 'scale(' + zoom + ')';
+  const label = document.getElementById('zoom-label');
+  if (label) label.textContent = Math.round(zoom * 100) + '%';
+}
+
+function zoomBy(delta) {
+  zoom = Math.min(2, Math.max(0.4, Math.round((zoom + delta) * 100) / 100));
+  applyZoom();
+}
+
+function zoomReset() {
+  zoom = 1;
+  applyZoom();
+}
+
+function onHandleMouseDown(ev, id) {
+  ev.stopPropagation();
+  ev.preventDefault();
+  edgeDraw = { from: id };
+  updateTempLine(ev);
+  document.addEventListener('mousemove', onEdgeDragMove);
+  document.addEventListener('mouseup', onEdgeDragEnd);
+}
+
+function updateTempLine(ev) {
+  const svg = document.getElementById('edge-svg');
+  let temp = document.getElementById('temp-edge-line');
+  if (!temp) {
+    temp = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    temp.id = 'temp-edge-line';
+    temp.setAttribute('fill', 'none');
+    temp.setAttribute('stroke-width', '1.6');
+    temp.setAttribute('stroke-dasharray', '5 4');
+    svg.appendChild(temp);
+  }
+  const color = nodes[edgeDraw.from] ? nodes[edgeDraw.from].color : '#6C5CE0';
+  temp.setAttribute('stroke', color);
+  const a = nodeCenter(edgeDraw.from);
+  const pos = clientToCanvas(ev);
+  const dx0 = pos.x - a.x, dy0 = pos.y - a.y;
+  const sides = chooseSides(dx0, dy0);
+  const p1 = anchorPoint(edgeDraw.from, sides.exitSide, 3);
+  const dx = pos.x - p1.x, dy = pos.y - p1.y;
+  const dist = Math.max(Math.hypot(dx, dy), 1);
+  const perp = leftBiasedPerp(dx / dist, dy / dist);
+  temp.setAttribute('d', buildOrthogonalPath(p1.x, p1.y, pos.x, pos.y, 0, perp).d);
+}
+
+function onEdgeDragMove(ev) {
+  if (!edgeDraw) return;
+  updateTempLine(ev);
+  const overNode = document.elementFromPoint(ev.clientX, ev.clientY);
+  const overNodeEl = overNode ? overNode.closest('.lg-node') : null;
+  document.querySelectorAll('.lg-node').forEach(el => el.classList.remove('drop-target'));
+  if (overNodeEl && overNodeEl.dataset.id !== edgeDraw.from) {
+    overNodeEl.classList.add('drop-target');
+  }
+}
+
+function onEdgeDragEnd(ev) {
+  document.removeEventListener('mousemove', onEdgeDragMove);
+  document.removeEventListener('mouseup', onEdgeDragEnd);
+  const temp = document.getElementById('temp-edge-line');
+  if (temp) temp.remove();
+  document.querySelectorAll('.lg-node').forEach(el => el.classList.remove('drop-target'));
+  if (!edgeDraw) return;
+  const fromId = edgeDraw.from;
+  const target = document.elementFromPoint(ev.clientX, ev.clientY);
+  const targetNodeEl = target ? target.closest('.lg-node') : null;
+  edgeDraw = null;
+  if (targetNodeEl) {
+    const targetId = targetNodeEl.dataset.id;
+    if (targetId !== fromId) {
+      const newEdge = { id: uid('e'), from: fromId, to: targetId, label: '' };
+      edges.push(newEdge);
+      renderNodes();
+      if (nodes[fromId].type === 'router') {
+        const t = nodes[targetId];
+        openInlineEditor(t.x, t.y + 62, [{ key: 'label', label: 'label for this condition', value: '', placeholder: 'e.g. enough' }], (vals) => {
+          newEdge.label = vals.label || '';
+          renderEdges();
+        });
+      }
+      return;
+    }
+  }
+  renderNodes();
+}
+
+function onEdgeClick(edgeId) {
+  if (mode !== 'delete') return;
+  edges = edges.filter(e => e.id !== edgeId);
+  renderEdges();
+}
+
+function onNodeDblClick(ev, id) {
+  if (mode === 'delete') return;
+  const n = nodes[id];
+  if (n.type === 'start') return;
+  const fields = [{ key: 'label', label: 'node name', value: n.label }];
+  if (n.type === 'action') {
+    fields.push({ key: 'effect', label: 'what does it change in the state? (free text)', value: n.effect, placeholder: 'e.g. increment attempts by 1' });
+  }
+  openInlineEditor(n.x, n.y + 62, fields, (vals) => {
+    if (vals.label != null && vals.label.trim() !== '') n.label = vals.label;
+    if (vals.effect != null) n.effect = vals.effect;
+    renderNodes();
+  });
+}
+
+function toggleMode(m) {
+  mode = mode === m ? null : m;
+  edgeDraw = null;
+  document.getElementById('delete-btn').classList.toggle('active', mode === 'delete');
+  renderNodes();
+}
+
+function addStateRow(key, val) {
+  stateVars.push({ key: key || '', val: val || '' });
+  renderState();
+}
+
+function renderState() {
+  const list = document.getElementById('state-list');
+  list.innerHTML = '';
+  stateVars.forEach((row, i) => {
+    const div = document.createElement('div');
+    div.className = 'lg-state-row';
+    div.innerHTML =
+      '<input class="k" placeholder="variable" value="' + escapeHtml(row.key) + '">' +
+      '<input class="v" placeholder="value" value="' + escapeHtml(row.val) + '">' +
+      '<span class="rm" title="remove">×</span>';
+    const [ki, vi, rm] = div.querySelectorAll('input, .rm');
+    ki.addEventListener('input', () => stateVars[i].key = ki.value);
+    vi.addEventListener('input', () => stateVars[i].val = vi.value);
+    rm.addEventListener('click', () => { stateVars.splice(i, 1); renderState(); });
+    list.appendChild(div);
+  });
+}
+
+function logEntry(text) {
+  runSteps += 1;
+  runLog.unshift({ step: runSteps, text });
+  const el = document.getElementById('run-log');
+  el.innerHTML = runLog.map(l => '<div class="entry"><span class="step-n">paso ' + l.step + '</span> — ' + escapeHtml(l.text) + '</div>').join('');
+}
+
+function stepRun() {
+  ensureStartNode();
+  const warnEl = document.getElementById('loop-warn');
+  warnEl.style.display = 'none';
+  if (!runCurrent) {
+    runCurrent = 'start';
+    visitCounts = {};
+    logEntry('graph start.');
+    updateRunPanel();
+    renderNodes();
+    return;
+  }
+  const n = nodes[runCurrent];
+  if (!n) { runCurrent = null; return; }
+  if (n.type === 'end') {
+    logEntry('the graph reached an end node. Execution finished.');
+    updateRunPanel();
+    return;
+  }
+  const outs = edges.filter(e => e.from === runCurrent);
+  if (n.type === 'router') {
+    if (outs.length < 1) { logEntry('this conditional has no outputs. Cannot continue.'); return; }
+    logEntry('node "' + n.label + '": pick a branch on the node to continue.');
+    updateRunPanel();
+    renderNodes();
+    return;
+  }
+  if (outs.length === 0) {
+    logEntry('el node "' + n.label + '" no tiene salida. execution detenida.');
+    return;
+  }
+  const next = outs[0].to;
+  advanceTo(next, n.type === 'action' && n.effect ? 'apply to the state: "' + n.effect + '"' : null);
+}
+
+function chooseBranch(edgeId) {
+  const e = edges.find(x => x.id === edgeId);
+  if (!e) return;
+  advanceTo(e.to, 'took branch "' + (e.label || 'sin etiqueta') + '"');
+}
+
+function advanceTo(nextId, extraNote) {
+  visitCounts[nextId] = (visitCounts[nextId] || 0) + 1;
+  const label = nodes[nextId] ? nodes[nextId].label : nextId;
+  logEntry((extraNote ? extraNote + '. ' : '') + 'advances to "' + label + '".');
+  runCurrent = nextId;
+  const warnEl = document.getElementById('loop-warn');
+  if (visitCounts[nextId] > 5) {
+    warnEl.style.display = 'block';
+    warnEl.textContent = 'this node repeated ' + visitCounts[nextId] + ' times: check whether the loop exit condition can actually be met.';
+  } else {
+    warnEl.style.display = 'none';
+  }
+  updateRunPanel();
+  renderNodes();
+}
+
+function updateRunPanel() {
+  const box = document.getElementById('run-current');
+  if (!runCurrent || !nodes[runCurrent]) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  box.textContent = 'current node: ' + nodes[runCurrent].label;
+}
+
+function resetRun() {
+  runCurrent = null;
+  runSteps = 0;
+  visitCounts = {};
+  runLog = [];
+  document.getElementById('run-log').innerHTML = '';
+  document.getElementById('loop-warn').style.display = 'none';
+  updateRunPanel();
+  renderNodes();
+}
+
+function stateVarNames() {
+  return stateVars.map(v => (v.key || '').trim()).filter(Boolean);
+}
+
+function mentionsVar(text, varName) {
+  if (!text || !varName) return false;
+  const re = new RegExp('\\b' + varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+  return re.test(text);
+}
+
+function reachableFromStart() {
+  const reachable = new Set();
+  const stack = ['start'];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (reachable.has(cur)) continue;
+    reachable.add(cur);
+    edges.filter(e => e.from === cur).forEach(e => stack.push(e.to));
+  }
+  return reachable;
+}
+
+function canReachEnd(fromId) {
+  const seen = new Set();
+  const stack = [fromId];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    if (nodes[cur] && nodes[cur].type === 'end') return true;
+    edges.filter(e => e.from === cur).forEach(e => stack.push(e.to));
+  }
+  return false;
+}
+
+function findAllCycles() {
+  const found = [];
+  const visited = new Set();
+  const stack = [];
+  function dfs(id) {
+    if (stack.includes(id)) {
+      const cycle = stack.slice(stack.indexOf(id)).concat(id);
+      found.push(cycle);
+      return;
+    }
+    if (visited.has(id)) return;
+    visited.add(id);
+    stack.push(id);
+    edges.filter(e => e.from === id).forEach(e => dfs(e.to));
+    stack.pop();
+  }
+  Object.keys(nodes).forEach(id => dfs(id));
+  return found;
+}
+
+function runStructuralValidation() {
+  ensureStartNode();
+  const errors = [], warnings = [];
+  const ids = Object.keys(nodes);
+  const badNodes = new Set();
+
+  ids.forEach(id => {
+    const n = nodes[id];
+    const incoming = edges.filter(e => e.to === id).length;
+    const outgoing = edges.filter(e => e.from === id).length;
+    if (n.type !== 'start' && incoming === 0) { errors.push('"' + n.label + '" has no incoming connection (it never runs).'); badNodes.add(id); }
+    if (n.type !== 'end' && outgoing === 0) { errors.push('"' + n.label + '" has no outgoing connection (the graph hangs there).'); badNodes.add(id); }
+    if (n.type === 'router' && outgoing < 2) { errors.push('"' + n.label + '" is conditional but has fewer than two outputs: not a real decision.'); badNodes.add(id); }
+  });
+
+  const reachable = reachableFromStart();
+  ids.forEach(id => {
+    if (id !== 'start' && !reachable.has(id)) { warnings.push('"' + nodes[id].label + '" is unreachable from start.'); badNodes.add(id); }
+  });
+
+  const anyEnd = ids.some(id => nodes[id].type === 'end');
+  if (!anyEnd) errors.push('there is no end node in the graph.');
+  else if (!canReachEnd('start')) errors.push('there is no path from start to an end node.');
+
+  ids.forEach(id => {
+    const n = nodes[id];
+    if (n.type === 'end' || !reachable.has(id)) return;
+    if (!canReachEnd(id)) { warnings.push('from "' + n.label + '" you cannot reach an end node.'); badNodes.add(id); }
+  });
+
+  const cycles = findAllCycles();
+  cycles.forEach(cycle => {
+    const labels = cycle.map(cid => nodes[cid] ? nodes[cid].label : cid);
+    const hasRouter = cycle.some(cid => nodes[cid] && nodes[cid].type === 'router');
+    if (!hasRouter) {
+      errors.push('the cycle ' + labels.join(' → ') + ' does not pass through any conditional: infinite loop.');
+      cycle.forEach(cid => badNodes.add(cid));
+    } else {
+      const routerIds = cycle.filter(cid => nodes[cid] && nodes[cid].type === 'router');
+      const routerReadsVars = routerIds.some(rid => stateVarNames().some(v => mentionsVar(nodes[rid].label, v)));
+      const cycleWritesState = cycle.some(cid => nodes[cid] && nodes[cid].type === 'action' && nodes[cid].effect && nodes[cid].effect.trim());
+      if (!cycleWritesState) {
+        warnings.push('the loop ' + labels.join(' → ') + ' has a conditional but no node in the cycle modifies the state: it probably never stops.');
+      }
+    }
+  });
+
+  const declared = stateVarNames();
+  const writers = {}, readers = {};
+  declared.forEach(v => { writers[v] = false; readers[v] = false; });
+  ids.forEach(id => {
+    const n = nodes[id];
+    declared.forEach(v => {
+      if (n.type === 'action' && mentionsVar(n.effect, v)) writers[v] = true;
+      if (n.type === 'router' && mentionsVar(n.label, v)) readers[v] = true;
+      if (n.type === 'action' && mentionsVar(n.effect, v)) readers[v] = true;
+    });
+  });
+  ids.forEach(id => {
+    const n = nodes[id];
+    if (n.type !== 'router') return;
+    declared.forEach(v => {
+      if (mentionsVar(n.label, v) && !writers[v]) {
+        warnings.push('"' + n.label + '" evaluates the variable "' + v + '" but no node writes it.');
+        badNodes.add(id);
+      }
+    });
+  });
+  declared.forEach(v => {
+    if (!writers[v] && !readers[v]) warnings.push('the state variable "' + v + '" is neither used nor modified by any node (dead state).');
+  });
+
+  const hasLoop = cycles.length > 0;
+  if (hasLoop) warnings.push('remember that in LangGraph every loop needs an iteration limit (recursion_limit) so it does not run indefinitely.');
+
+  return { errors, warnings, badNodes };
+}
+
+function validateGraph() {
+  const { errors, warnings, badNodes } = runStructuralValidation();
+  highlightProblemNodes(badNodes);
+  const panel = document.getElementById('results-panel');
+  const content = document.getElementById('results-content');
+  panel.style.display = 'block';
+  let html = '';
+  if (errors.length === 0 && warnings.length === 0) {
+    html = '<div style="color:#1D9E75; font-weight:500;">✓ the graph passes all structural validations.</div>';
+  } else {
+    if (errors.length) {
+      html += '<div style="color:#C0392B; font-weight:500; margin-bottom:4px;">errors (' + errors.length + ')</div><ul style="margin:0 0 8px; padding-left:16px;">' + errors.map(e => '<li style="margin-bottom:3px;">' + escapeHtml(e) + '</li>').join('') + '</ul>';
+    }
+    if (warnings.length) {
+      html += '<div style="color:#BA7517; font-weight:500; margin-bottom:4px;">warnings (' + warnings.length + ')</div><ul style="margin:0; padding-left:16px;">' + warnings.map(w => '<li style="margin-bottom:3px;">' + escapeHtml(w) + '</li>').join('') + '</ul>';
+    }
+  }
+  content.innerHTML = html;
+}
+
+function highlightProblemNodes(badSet) {
+  document.querySelectorAll('.lg-node').forEach(el => {
+    el.classList.toggle('problem', badSet.has(el.dataset.id));
+  });
+}
+
+let resetConfirmPending = false;
+let resetConfirmTimeout = null;
+
+function resetAll() {
+  const btn = document.getElementById('reset-all-btn');
+  if (!resetConfirmPending) {
+    resetConfirmPending = true;
+    btn.textContent = 'confirm reset';
+    resetConfirmTimeout = setTimeout(() => {
+      resetConfirmPending = false;
+      btn.textContent = 'reset all';
+    }, 3000);
+    return;
+  }
+  clearTimeout(resetConfirmTimeout);
+  resetConfirmPending = false;
+  btn.textContent = 'reset all';
+  nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = [];
+  ensureStartNode();
+  resetRun();
+  renderState();
+  renderNodes();
+}
+
+function loadExample(key) {
+  if (!key) return;
+  nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = [];
+  ensureStartNode();
+  if (key === 'retry') {
+    const plan = addNode('action', 260, 40, 'plan'); nodes[plan].effect = 'decide what to search';
+    const tool = addNode('action', 260, 170, 'search'); nodes[tool].effect = 'increment attempts by 1';
+    const ev = addNode('router', 260, 300, 'evaluate');
+    const end = addNode('end', 500, 300, 'fin');
+    edges.push({ id: uid('e'), from: 'start', to: plan, label: '' });
+    edges.push({ id: uid('e'), from: plan, to: tool, label: '' });
+    edges.push({ id: uid('e'), from: tool, to: ev, label: '' });
+    edges.push({ id: uid('e'), from: ev, to: plan, label: 'retry' });
+    edges.push({ id: uid('e'), from: ev, to: end, label: 'enough' });
+    stateVars = [{ key: 'intentos', val: '0' }, { key: 'enough', val: 'false' }];
+  } else if (key === 'simple') {
+    const check = addNode('router', 260, 60, 'has data?');
+    const a = addNode('action', 480, 0, 'answer directly');
+    const b = addNode('action', 480, 140, 'search first');
+    const end1 = addNode('end', 700, 0, 'fin');
+    const end2 = addNode('end', 700, 140, 'fin');
+    edges.push({ id: uid('e'), from: 'start', to: check, label: '' });
+    edges.push({ id: uid('e'), from: check, to: a, label: 'yes' });
+    edges.push({ id: uid('e'), from: check, to: b, label: 'no' });
+    edges.push({ id: uid('e'), from: a, to: end1, label: '' });
+    edges.push({ id: uid('e'), from: b, to: end2, label: '' });
+  } else if (key === 'chained') {
+    const c1 = addNode('router', 260, 60, 'input clear?');
+    const ask = addNode('action', 260, 220, 'ask for clarification');
+    const c2 = addNode('router', 500, 60, 'needs tool?');
+    const direct = addNode('action', 740, 0, 'respond');
+    const useTool = addNode('action', 740, 140, 'use tool');
+    const end = addNode('end', 950, 60, 'fin');
+    edges.push({ id: uid('e'), from: 'start', to: c1, label: '' });
+    edges.push({ id: uid('e'), from: c1, to: c2, label: 'yes' });
+    edges.push({ id: uid('e'), from: c1, to: ask, label: 'no' });
+    edges.push({ id: uid('e'), from: ask, to: c1, label: 'retry' });
+    edges.push({ id: uid('e'), from: c2, to: direct, label: 'no' });
+    edges.push({ id: uid('e'), from: c2, to: useTool, label: 'yes' });
+    edges.push({ id: uid('e'), from: direct, to: end, label: '' });
+    edges.push({ id: uid('e'), from: useTool, to: end, label: '' });
+  }
+  document.getElementById('example-select').value = '';
+  resetRun();
+  renderState();
+  renderNodes();
+}
+
+function serializeGraph() {
+  return {
+    version: 1,
+    problem: document.getElementById('problem-desc').value,
+    stateVars: stateVars.map(v => ({ key: v.key, val: v.val })),
+    nodes: Object.values(nodes).map(n => ({ id: n.id, type: n.type, label: n.label, effect: n.effect, color: n.color, x: n.x, y: n.y })),
+    edges: edges.map(e => ({ id: e.id, from: e.from, to: e.to, label: e.label })),
+  };
+}
+
+function exportSVG() {
+  const { svg } = buildGraphSVG();
+  downloadBlob(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }), 'langgraph-graph.svg');
+}
+
+function exportJSON() {
+  const data = JSON.stringify(serializeGraph(), null, 2);
+  downloadBlob(new Blob([data], { type: 'application/json' }), 'langgraph-graph.json');
+}
+
+function importJSONPrompt() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'application/json,.json';
+  input.onchange = () => {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        loadGraphData(data);
+      } catch (err) {
+        showResults('<div style="color:#C0392B;">no se pudo leer el archivo: ' + escapeHtml(String(err)) + '</div>');
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+function loadGraphData(data) {
+  nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = [];
+  (data.nodes || []).forEach(n => {
+    nodes[n.id] = { id: n.id, type: n.type, label: n.label, effect: n.effect || '', color: n.color || nextColor(n.type), x: n.x || 60, y: n.y || 60 };
+    const seqNum = parseInt(String(n.id).split('_').pop());
+    if (!isNaN(seqNum) && seqNum > nodeSeq) nodeSeq = seqNum;
+  });
+  ensureStartNode();
+  (data.edges || []).forEach(e => edges.push({ id: e.id, from: e.from, to: e.to, label: e.label || '' }));
+  (data.stateVars || []).forEach(v => stateVars.push({ key: v.key, val: v.val }));
+  document.getElementById('problem-desc').value = data.problem || '';
+  resetRun();
+  renderState();
+  renderNodes();
+}
+
+function buildGraphSVG() {
+  let maxX = 0, maxY = 0;
+  Object.values(nodes).forEach(n => {
+    const el = document.querySelector('.lg-node[data-id="' + n.id + '"]');
+    const w = el ? el.offsetWidth : 130, h = el ? el.offsetHeight : 50;
+    maxX = Math.max(maxX, n.x + w); maxY = Math.max(maxY, n.y + h);
+  });
+  const pad = 60;
+  maxX += pad; maxY += pad;
+  const svgEl = document.getElementById('edge-svg');
+  const edgesInner = svgEl.innerHTML;
+  const nodesSvg = Object.values(nodes).map(n => {
+    const el = document.querySelector('.lg-node[data-id="' + n.id + '"]');
+    const w = el ? el.offsetWidth : 130, h = el ? el.offsetHeight : 50;
+    const isRouter = n.type === 'router';
+    const isTerm = n.type === 'start' || n.type === 'end';
+    const rx = isTerm ? h / 2 : isRouter ? 26 : 6;
+    const fill = hexToRgba(n.color, 0.09);
+    const dash = isRouter ? ' stroke-dasharray="6 4"' : '';
+    return '<g><rect x="' + n.x + '" y="' + n.y + '" width="' + w + '" height="' + h + '" rx="' + rx + '" fill="' + fill + '" stroke="' + n.color + '" stroke-width="2"' + dash + '/>' +
+      '<text x="' + (n.x + w / 2) + '" y="' + (n.y + h / 2 + 5) + '" text-anchor="middle" font-family="sans-serif" font-size="13.5" font-weight="600" fill="' + n.color + '">' + escapeHtml(n.label) + '</text></g>';
+  }).join('');
+  return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + maxX + '" height="' + maxY + '" viewBox="0 0 ' + maxX + ' ' + maxY + '"><rect width="100%" height="100%" fill="#F8F8FC"/>' + edgesInner + nodesSvg + '</svg>', width: maxX, height: maxY };
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportPNG() {
+  const { svg, width, height } = buildGraphSVG();
+  const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(svgBlob);
+  const img = new Image();
+  img.onload = () => {
+    try {
+      const scale = 2;
+      const cv = document.createElement('canvas');
+      cv.width = width * scale; cv.height = height * scale;
+      const ctx = cv.getContext('2d');
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      cv.toBlob(blob => {
+        if (blob) { downloadBlob(blob, 'langgraph-graph.png'); }
+        else { fallbackSVG(svg); }
+      }, 'image/png');
+    } catch (err) {
+      URL.revokeObjectURL(url);
+      fallbackSVG(svg);
+    }
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); fallbackSVG(svg); };
+  img.src = url;
+}
+
+function fallbackSVG(svg) {
+  downloadBlob(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }), 'langgraph-graph.svg');
+  showResults('<div style="color:#BA7517;">PNG could not be generated in this environment (browser restriction), so the graph was downloaded as <b>SVG</b>. SVG opens in any browser or image viewer and can be converted to PNG afterwards.</div>');
+}
+
+function pyName(label, fallback) {
+  const s = (label || fallback).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return s || fallback;
+}
+
+function generateCode() {
+  ensureStartNode();
+  const nameOf = {};
+  Object.values(nodes).forEach(n => {
+    if (n.type === 'start') nameOf[n.id] = 'START';
+    else if (n.type === 'end') nameOf[n.id] = 'END';
+    else nameOf[n.id] = pyName(n.label, n.id);
+  });
+  const routerIds = new Set(Object.values(nodes).filter(n => n.type === 'router').map(n => n.id));
+
+  // Give each router's branch labels safe python string keys, unique per router
+  function branchKey(edge, idx) {
+    const raw = (edge.label || '').trim();
+    return raw || ('rama_' + (idx + 1));
+  }
+
+  const stateKeys = stateVars.map(v => (v.key || '').trim()).filter(Boolean);
+  let code = 'from typing import TypedDict, Literal\n';
+  code += 'from langgraph.graph import StateGraph, START, END\n\n\n';
+  code += 'class State(TypedDict):\n';
+  if (stateKeys.length) stateKeys.forEach(k => { code += '    ' + pyName(k, k) + ': str\n'; });
+  else code += '    pass\n';
+  code += '\n\n';
+
+  // Action node functions
+  Object.values(nodes).forEach(n => {
+    if (n.type !== 'action') return;
+    code += 'def ' + nameOf[n.id] + '(state: State) -> dict:\n';
+    code += '    # ' + (n.effect ? n.effect : 'TODO: implement this step') + '\n';
+    code += '    return {}\n\n\n';
+  });
+
+  // Routing functions: one per router, returns a branch label
+  Object.values(nodes).forEach(n => {
+    if (n.type !== 'router') return;
+    const outs = edges.filter(e => e.from === n.id);
+    const labels = outs.map((e, i) => branchKey(e, i));
+    const literal = labels.length ? labels.map(l => '"' + l + '"').join(', ') : '"END"';
+    code += 'def route_' + nameOf[n.id] + '(state: State) -> Literal[' + literal + ']:\n';
+    code += '    # ' + (n.label ? 'decide based on: ' + n.label : 'decide the next route based on the state') + '\n';
+    outs.forEach((e, i) => {
+      const cond = i === 0 ? 'if' : 'elif';
+      code += '    ' + cond + ' ...:\n';
+      code += '        return "' + branchKey(e, i) + '"\n';
+    });
+    code += '    return "' + (outs[0] ? branchKey(outs[0], 0) : 'END') + '"\n\n\n';
+  });
+
+  code += 'builder = StateGraph(State)\n';
+  Object.values(nodes).forEach(n => {
+    if (n.type === 'action') code += 'builder.add_node("' + nameOf[n.id] + '", ' + nameOf[n.id] + ')\n';
+  });
+  code += '\n';
+
+  // Plain edges: skip any edge whose target is a router (handled via conditional edges),
+  // and skip edges leaving a router (those are encoded in the conditional mapping).
+  edges.forEach(e => {
+    const from = nodes[e.from], to = nodes[e.to];
+    if (!from || !to) return;
+    if (routerIds.has(e.from) || routerIds.has(e.to)) return;
+    const fromRef = from.type === 'start' ? 'START' : '"' + nameOf[e.from] + '"';
+    const toRef = to.type === 'end' ? 'END' : '"' + nameOf[e.to] + '"';
+    code += 'builder.add_edge(' + fromRef + ', ' + toRef + ')\n';
+  });
+
+  // Conditional edges: for each router, every predecessor node gets a conditional edge
+  // using the router's routing function and a label->target mapping.
+  Object.values(nodes).forEach(n => {
+    if (n.type !== 'router') return;
+    const outs = edges.filter(e => e.from === n.id);
+    const preds = edges.filter(e => e.to === n.id).map(e => e.from);
+    const mapping = outs.map((e, i) => {
+      const key = branchKey(e, i);
+      const target = nodes[e.to] && nodes[e.to].type === 'end' ? 'END' : '"' + nameOf[e.to] + '"';
+      return '"' + key + '": ' + target;
+    }).join(', ');
+    if (preds.length === 0) {
+      code += '# the conditional "' + n.label + '" has no predecessor node; connect it from some node\n';
+    }
+    preds.forEach(pid => {
+      const src = nodes[pid];
+      if (!src) return;
+      const srcRef = src.type === 'start' ? 'START' : '"' + nameOf[pid] + '"';
+      code += 'builder.add_conditional_edges(' + srcRef + ', route_' + nameOf[n.id] + ', {' + mapping + '})\n';
+    });
+  });
+  code += '\ngraph = builder.compile()\n';
+
+  showResults('<div style="font-weight:500; margin-bottom:6px;">generated LangGraph code</div>' +
+    '<textarea readonly style="width:100%; min-height:220px; font-family:monospace; font-size:11px; border:1px solid var(--line-strong); border-radius:6px; padding:8px; background:var(--paper);">' + escapeHtml(code) + '</textarea>' +
+    '<button class="lg-btn" style="width:100%; margin-top:6px;" onclick="copyText(this, `' + code.replace(/`/g, '\\`').replace(/\$/g, '\\$') + '`)">copy code</button>' +
+    '<div style="font-size:11px; color:var(--ink-soft); margin-top:6px;">This is a skeleton: fill in the conditions (...) and each node effects.</div>');
+}
+
+function copyText(btn, text) {
+  navigator.clipboard.writeText(text).then(() => {
+    const old = btn.textContent; btn.textContent = 'copied ✓';
+    setTimeout(() => btn.textContent = old, 1500);
+  }).catch(() => { btn.textContent = 'copy manually from the box'; });
+}
+
+function buildAnalysisPrompt() {
+  const g = serializeGraph();
+  const nodeLines = g.nodes.filter(n => n.type !== 'start' && n.type !== 'end').map(n => '- ' + n.label + ' (' + (n.type === 'router' ? 'conditional' : 'action') + ')' + (n.effect ? ' — effect: ' + n.effect : '')).join('\n');
+  const edgeLines = g.edges.map(e => {
+    const from = nodes[e.from] ? nodes[e.from].label : e.from;
+    const to = nodes[e.to] ? nodes[e.to].label : e.to;
+    return '- ' + from + ' → ' + to + (e.label ? ' [' + e.label + ']' : '');
+  }).join('\n');
+  const stateLine = g.stateVars.map(v => v.key + (v.val ? '=' + v.val : '')).filter(Boolean).join(', ') || '(none)';
+  return 'You are an expert in designing agents with LangGraph. A student built this graph to solve a problem. Evaluate whether the DESIGN is a good solution for the problem (do not validate syntax, that is already checked). Point out: missing steps, unnecessary nodes, misplaced decisions, loops that make no sense for the task, and concrete improvement suggestions. Be direct and practical.\n\n' +
+    'PROBLEM TO SOLVE:\n' + (g.problem || '(the student did not describe it)') + '\n\n' +
+    'SHARED STATE: ' + stateLine + '\n\n' +
+    'NODES:\n' + (nodeLines || '(none)') + '\n\n' +
+    'CONNECTIONS:\n' + (edgeLines || '(none)') + '\n\n' +
+    'Give me your design critique.';
+}
+
+async function analyzeDesign() {
+  const problem = document.getElementById('problem-desc').value.trim();
+  if (!problem) {
+    showResults('<div style="color:#BA7517;">first describe the problem to solve (field above) so the AI can evaluate whether the graph solves it well.</div>');
+    return;
+  }
+  if (!BACKEND_URL) { showPromptFallback(); return; }
+  showResults('<div style="color:var(--ink-soft);">analyzing the design…</div>');
+  try {
+    const response = await fetch(BACKEND_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: buildAnalysisPrompt() }),
+    });
+    if (response.status === 429) {
+      showResults('<div style="color:#BA7517;">too many requests in a row. Wait a minute and try again.</div>');
+      return;
+    }
+    if (!response.ok) throw new Error('backend responded ' + response.status);
+    const data = await response.json();
+    if (data.error) throw new Error(data.error);
+    showResults('<div style="font-weight:500; margin-bottom:6px;">design critique (AI)</div><div style="white-space:pre-wrap;">' + escapeHtml(data.text || '(no response)') + '</div>');
+  } catch (err) {
+    showResults('<div style="color:#C0392B; margin-bottom:6px;">could not reach the backend (' + escapeHtml(String(err.message || err)) + ').</div>');
+    showPromptFallback(true);
+  }
+}
+
+function showPromptFallback(append) {
+  const prompt = buildAnalysisPrompt();
+  const html = '<div style="font-weight:500; margin-bottom:6px;">manual analysis</div>' +
+    '<div style="font-size:12px; margin-bottom:6px;">Copy this prompt and paste it into any chat with a model (ChatGPT, Claude, Gemini):</div>' +
+    '<textarea readonly style="width:100%; min-height:180px; font-family:monospace; font-size:11px; border:1px solid var(--line-strong); border-radius:6px; padding:8px; background:var(--paper);">' + escapeHtml(prompt) + '</textarea>' +
+    '<button class="lg-btn" style="width:100%; margin-top:6px;" onclick="copyText(this, `' + prompt.replace(/`/g, '\\`').replace(/\$/g, '\\$') + '`)">copy prompt</button>';
+  if (append) {
+    document.getElementById('results-content').innerHTML += '<div style="margin-top:10px;">' + html + '</div>';
+  } else {
+    showResults(html);
+  }
+}
+
+function showResults(html) {
+  document.getElementById('results-panel').style.display = 'block';
+  document.getElementById('results-content').innerHTML = html;
+}
+
+buildMarkerDefs();
+ensureStartNode();
+addStateRow('intentos', '0');
+renderNodes();
+</script>
+</body>
+</html>

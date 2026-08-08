@@ -1,0 +1,7 @@
+{
+  "name": "langcanvas",
+  "version": "1.0.0",
+  "description": "Visual LangGraph simulator with Gemini design analysis",
+  "private": true,
+  "type": "module"
+}
