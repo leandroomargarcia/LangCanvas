@@ -2,7 +2,8 @@ node_modules
 .vercel
 .env
 .env.local
-backend/.env
-backend/.env.local
 *.log
 .DS_Store
+
+# Local Firebase web config (use firebase-config.example.js)
+firebase-config.js

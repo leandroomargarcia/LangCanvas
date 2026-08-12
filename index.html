@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LangCanvas — LangGraph simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
   :root {
     --paper: #F8F8FC;
@@ -23,19 +26,33 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    min-height: calc(100vh - 32px);
   }
   .lg-toolbar {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 10px 14px;
     align-items: center;
+    justify-content: space-between;
     padding: 10px 12px;
     background: var(--card);
     border: 1px solid var(--line);
-    border-radius: 10px;
+    border-radius: 12px;
+    width: 100%;
   }
+  .lg-toolbar-cluster {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0;
+  }
+  .lg-toolbar-cluster.main { flex: 1 1 auto; justify-content: center; }
+  .lg-toolbar-cluster.right { margin-left: auto; }
   .lg-toolbar .grp { display: flex; gap: 6px; align-items: center; }
-  .lg-toolbar .sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+  .lg-toolbar .sep { width: 1px; height: 22px; background: var(--line); margin: 0 2px; }
+  .lg-brand-mark {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 700; font-size: 17px; letter-spacing: -0.03em;
+    color: var(--ink); margin-right: 4px; white-space: nowrap;
+  }
+  .lg-brand-mark span { color: var(--accent); }
   button.lg-btn {
     font-family: inherit;
     font-size: 12.5px;
@@ -49,11 +66,22 @@
   button.lg-btn:hover { background: var(--paper); }
   button.lg-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   button.lg-btn.warn { border-color: #B84B3E; color: #B84B3E; }
+  button.lg-btn.primary {
+    background: var(--accent); color: #fff; border-color: var(--accent);
+  }
+  button.lg-btn.primary:hover { background: #5b4cc4; }
+  button.lg-btn.ghost {
+    border-color: transparent; background: transparent; color: var(--ink-soft);
+  }
+  button.lg-btn.ghost:hover { background: var(--paper); color: var(--ink); }
   select.lg-select {
     font-family: inherit; font-size: 12.5px; padding: 6px 8px;
     border-radius: 7px; border: 1px solid var(--line-strong); background: var(--card);
   }
-  .lg-body { display: flex; gap: 12px; align-items: flex-start; }
+  .lg-body {
+    display: flex; gap: 12px; align-items: stretch;
+    flex: 1; min-height: 0;
+  }
   .lg-side {
     width: 230px; flex-shrink: 0;
     display: flex; flex-direction: column; gap: 10px;
@@ -77,7 +105,9 @@
   .lg-log .step-n { color: var(--accent); font-weight: 600; }
   .lg-warn { color: #B84B3E; font-size: 12.5px; margin-top: 4px; }
   .lg-canvas-outer {
-    flex: 1; min-width: 0; height: 480px; overflow: auto;
+    flex: 1; min-width: 0; min-height: 520px;
+    height: auto; align-self: stretch;
+    overflow: auto;
     border: 1px solid var(--line); border-radius: 10px;
     background-color: var(--paper);
     background-image: radial-gradient(var(--line) 1px, transparent 1px);
@@ -85,7 +115,8 @@
     position: relative;
   }
   .lg-canvas {
-    position: relative; width: 1400px; height: 900px;
+    position: relative; width: 900px; height: 640px;
+    min-width: 100%; min-height: 100%;
     transform-origin: 0 0;
   }
   .lg-zoom-glass {
@@ -118,6 +149,17 @@
     transition: box-shadow .12s ease;
   }
   .lg-node.dragging { cursor: grabbing; box-shadow: 0 6px 18px rgba(30,20,60,.14); z-index: 5; }
+  .lg-node.selected {
+    outline: 2.5px solid var(--accent);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 4px rgba(108,92,224,0.14);
+  }
+  .lg-marquee {
+    position: absolute; z-index: 25; pointer-events: none;
+    border: 1.5px dashed var(--accent);
+    background: rgba(108,92,224,0.10);
+    border-radius: 4px;
+  }
   .lg-node.n-action { border-radius: 5px; }
   .lg-node.n-router { border-radius: 26px; border-style: dashed; }
   .lg-node.n-start, .lg-node.n-end { border-radius: 999px; padding: 14px 30px; }
@@ -152,45 +194,384 @@
     border: 1px solid var(--line-strong); border-radius: 6px; background: var(--paper);
   }
   .lg-inline-editor .actions { display: flex; gap: 6px; margin-top: 4px; }
+
+  /* AI critique panel (over canvas, readable width) */
+  .lg-critique-panel {
+    position: absolute; top: 12px; right: 12px; bottom: 12px;
+    width: min(420px, calc(100% - 24px));
+    z-index: 40; display: flex; flex-direction: column;
+    background: rgba(255,255,255,0.94);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    border: 1px solid rgba(199,196,220,0.85);
+    border-radius: 14px;
+    box-shadow: 0 10px 36px rgba(30,20,60,0.14);
+    overflow: hidden;
+  }
+  .lg-critique-panel[hidden] { display: none !important; }
+  .lg-critique-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+    padding: 14px 14px 10px; border-bottom: 1px solid var(--paper-line);
+  }
+  .lg-critique-eyebrow {
+    font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 2px;
+  }
+  .lg-critique-head h3 {
+    margin: 0; font-size: 16px; font-weight: 650; color: var(--ink); text-transform: none; letter-spacing: 0;
+  }
+  .lg-critique-close {
+    width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--paper); color: var(--ink-soft); cursor: pointer; font-size: 18px; line-height: 1;
+  }
+  .lg-critique-close:hover { color: var(--ink); background: #fff; }
+  .lg-critique-body {
+    padding: 12px 14px 16px; overflow-y: auto; flex: 1; min-height: 0;
+    font-size: 13px; line-height: 1.5;
+  }
+  .lg-critique-lead {
+    color: var(--ink-soft); margin: 0 0 12px; font-size: 12.5px;
+  }
+  .lg-critique-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .lg-critique-item {
+    display: grid; grid-template-columns: 8px 1fr; gap: 10px;
+    padding: 10px 11px; border-radius: 10px;
+    background: var(--paper); border: 1px solid var(--paper-line);
+  }
+  .lg-critique-item .dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+    margin-top: 5px;
+  }
+  .lg-critique-item .title {
+    font-size: 12.5px; font-weight: 650; color: var(--ink); margin: 0 0 3px;
+  }
+  .lg-critique-item .body {
+    margin: 0; color: #3d3d48; font-size: 12.5px; line-height: 1.55;
+  }
+  .lg-critique-item.is-suggestion {
+    background: #F3F0FF; border-color: #D8D2F5;
+  }
+  .lg-critique-item.is-suggestion .dot { background: #5B4CC4; }
+  .lg-critique-item.is-suggestion .body {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px; line-height: 1.6; color: #3a3560;
+  }
+  .lg-critique-fallback { white-space: pre-wrap; color: var(--ink); }
+
+  .lg-app[hidden], #login-gate[hidden] { display: none !important; }
+  body:has(#login-gate:not([hidden])) {
+    margin: 0;
+    background: #ECEAF8;
+  }
+  #login-gate {
+    position: relative;
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    padding: 28px 20px;
+    font-family: "Outfit", sans-serif;
+    background:
+      radial-gradient(900px 520px at 12% 18%, rgba(108,92,224,0.22), transparent 60%),
+      radial-gradient(700px 480px at 88% 78%, rgba(72, 120, 210, 0.14), transparent 55%),
+      linear-gradient(160deg, #F4F2FC 0%, #E8E6F6 48%, #F7F6FB 100%);
+  }
+  .lg-login-stage {
+    position: absolute; inset: 0; pointer-events: none;
+  }
+  .lg-login-stage svg {
+    width: 100%; height: 100%; opacity: 0.55;
+  }
+  .lg-login-stage .edge {
+    stroke: #6C5CE0; stroke-width: 2; fill: none; opacity: 0.28;
+    stroke-dasharray: 8 10;
+    animation: lg-dash 18s linear infinite;
+  }
+  .lg-login-stage .node {
+    fill: rgba(255,255,255,0.72); stroke: #6C5CE0; stroke-width: 2;
+    filter: drop-shadow(0 6px 16px rgba(60,40,120,0.12));
+  }
+  .lg-login-stage .node.pulse {
+    animation: lg-pulse 3.6s ease-in-out infinite;
+  }
+  .lg-login-stage .node.delay { animation-delay: 1.2s; }
+  .lg-login-veil {
+    position: absolute; inset: 0;
+    background: linear-gradient(90deg, rgba(244,242,252,0.82) 0%, rgba(244,242,252,0.35) 48%, rgba(244,242,252,0.7) 100%);
+  }
+  .lg-login-card {
+    position: relative; z-index: 2;
+    width: min(440px, 100%);
+    background: rgba(255,255,255,0.78);
+    border: 1px solid rgba(255,255,255,0.85);
+    border-radius: 22px;
+    padding: 36px 32px 28px;
+    box-shadow: 0 20px 60px rgba(40,30,90,0.12);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    text-align: left;
+    animation: lg-rise 0.7s cubic-bezier(.2,.8,.2,1) both;
+  }
+  .lg-login-brand {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: clamp(40px, 7vw, 52px);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 1.05;
+    color: var(--ink);
+    margin: 0 0 14px;
+  }
+  .lg-login-brand span { color: var(--accent); }
+  .lg-login-sub {
+    margin: 0 0 26px; color: #5d5c6d; font-size: 16px; line-height: 1.55; font-weight: 400;
+    max-width: 34ch;
+  }
+  .lg-google-btn {
+    width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    font-family: inherit; font-size: 15px; font-weight: 600;
+    padding: 13px 16px; border-radius: 12px;
+    border: 1px solid transparent;
+    background: var(--ink); color: #fff; cursor: pointer;
+    transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+    box-shadow: 0 8px 22px rgba(38,38,46,0.18);
+  }
+  .lg-google-btn:hover { background: #1b1b22; transform: translateY(-1px); }
+  .lg-google-btn:disabled { opacity: 0.6; cursor: wait; transform: none; }
+  .lg-google-btn .g-badge {
+    width: 28px; height: 28px; border-radius: 8px; background: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .lg-try-free-btn {
+    width: 100%; margin-top: 10px;
+    font-family: inherit; font-size: 15px; font-weight: 600;
+    padding: 12px 16px; border-radius: 12px;
+    border: 1.5px solid rgba(108,92,224,0.35);
+    background: rgba(255,255,255,0.55); color: var(--ink); cursor: pointer;
+    transition: transform .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .lg-try-free-btn:hover {
+    border-color: var(--accent); background: rgba(255,255,255,0.85); transform: translateY(-1px);
+  }
+  .lg-login-divider {
+    display: flex; align-items: center; gap: 12px;
+    margin: 16px 0 4px; color: var(--ink-soft); font-size: 12px;
+  }
+  .lg-login-divider::before, .lg-login-divider::after {
+    content: ""; flex: 1; height: 1px; background: var(--paper-line);
+  }
+  .lg-feedback-overlay {
+    position: fixed; inset: 0; z-index: 80;
+    background: rgba(28, 26, 40, 0.42);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .lg-feedback-overlay[hidden] { display: none !important; }
+  .lg-feedback-card {
+    width: min(440px, 100%);
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 22px 22px 18px;
+    box-shadow: 0 18px 50px rgba(40,30,90,0.18);
+  }
+  .lg-feedback-card h3 {
+    margin: 0 0 6px; font-size: 18px; font-weight: 650; letter-spacing: -0.02em;
+  }
+  .lg-feedback-card p {
+    margin: 0 0 14px; color: var(--ink-soft); font-size: 13px; line-height: 1.45;
+  }
+  .lg-feedback-card label {
+    display: block; font-size: 11px; color: var(--ink-soft); margin-bottom: 4px;
+  }
+  .lg-feedback-card input,
+  .lg-feedback-card textarea {
+    width: 100%; font-family: inherit; font-size: 13px;
+    padding: 9px 10px; border: 1px solid var(--line-strong); border-radius: 8px;
+    background: var(--paper); margin-bottom: 10px; box-sizing: border-box;
+  }
+  .lg-feedback-card textarea { min-height: 120px; resize: vertical; }
+  .lg-btn.feedback {
+    background: #1a1a1f; color: #fff; border-color: #1a1a1f;
+  }
+  .lg-btn.feedback:hover { background: #000; color: #fff; border-color: #000; }
+  .lg-feedback-actions { display: flex; gap: 8px; margin-top: 4px; }
+  .lg-feedback-actions .lg-btn { flex: 1; }
+  .lg-feedback-status {
+    min-height: 1.2em; margin: 0 0 10px; font-size: 12.5px; color: var(--ink-soft);
+  }
+  .lg-feedback-status.is-error { color: #B84B3E; }
+  .lg-feedback-status.is-ok { color: #1D9E75; }
+  .lg-login-error { margin-top: 12px; color: #B84B3E; font-size: 13px; min-height: 1.2em; }
+  .lg-login-note { margin-top: 18px; font-size: 12.5px; color: var(--ink-soft); line-height: 1.45; }
+  .lg-login-credit {
+    margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--paper-line);
+    font-size: 12.5px; color: var(--ink-soft); line-height: 1.45;
+  }
+  .lg-login-credit a {
+    color: var(--ink); font-weight: 600; text-decoration: none; border-bottom: 1px solid rgba(108,92,224,0.35);
+  }
+  .lg-login-credit a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+  @keyframes lg-rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes lg-dash {
+    to { stroke-dashoffset: -180; }
+  }
+  @keyframes lg-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.04); }
+  }
+  @media (max-width: 560px) {
+    .lg-login-card { padding: 28px 22px 22px; text-align: center; }
+    .lg-login-sub { margin-left: auto; margin-right: auto; }
+  }
+  .lg-user-chip {
+    display: flex; align-items: center; gap: 8px;
+    padding: 2px 2px 2px 8px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--paper);
+  }
+  .lg-user-chip img {
+    width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line);
+    object-fit: cover; background: #fff;
+  }
+  .lg-user-meta { display: flex; flex-direction: column; line-height: 1.15; max-width: 110px; }
+  .lg-user-meta .name { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lg-user-meta .plan {
+    font-size: 10px; color: var(--accent); font-weight: 650;
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  .lg-user-chip .lg-btn { border-radius: 999px; padding: 5px 10px; font-size: 11.5px; }
+
+  .lg-menu { position: relative; }
+  .lg-menu-panel {
+    display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 50;
+    min-width: 220px; max-height: min(70vh, 520px); overflow-y: auto;
+    background: #fff; border: 1px solid var(--line-strong); border-radius: 10px;
+    box-shadow: 0 12px 32px rgba(30,20,60,0.14); padding: 6px 0;
+  }
+  .lg-menu.align-right .lg-menu-panel { left: auto; right: 0; }
+  .lg-menu.open .lg-menu-panel { display: block; }
+  @media (max-width: 900px) {
+    .lg-toolbar-cluster.main { justify-content: flex-start; flex: 1 1 100%; order: 3; }
+    .lg-brand-mark { font-size: 15px; }
+  }
+  .lg-menu-group {
+    padding: 8px 12px 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--ink-soft);
+  }
+  .lg-menu-item {
+    display: block; width: 100%; text-align: left; border: 0; background: transparent;
+    font-family: inherit; font-size: 13px; color: var(--ink); padding: 8px 14px; cursor: pointer;
+  }
+  .lg-menu-item:hover { background: var(--paper); color: var(--accent); }
+  .lg-menu-item .hint {
+    display: block; font-size: 11px; color: var(--ink-soft); font-weight: 400; margin-top: 2px;
+  }
 </style>
 </head>
 <body>
 
-<div class="lg-wrap">
+<div id="login-gate">
+  <div class="lg-login-stage" aria-hidden="true">
+    <svg viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice">
+      <path class="edge" d="M180 220 C280 180, 340 180, 420 240" />
+      <path class="edge" d="M420 240 C520 310, 560 360, 680 350" />
+      <path class="edge" d="M680 350 C790 340, 820 250, 940 220" />
+      <path class="edge" d="M420 240 C430 360, 390 430, 520 520" />
+      <path class="edge" d="M520 520 C650 590, 760 560, 880 610" />
+      <path class="edge" d="M180 220 C220 360, 240 480, 320 580" />
+      <rect class="node pulse" x="130" y="185" width="100" height="70" rx="36" />
+      <rect class="node" x="370" y="205" width="120" height="70" rx="12" />
+      <rect class="node pulse delay" x="630" y="315" width="120" height="70" rx="28" />
+      <rect class="node" x="900" y="185" width="100" height="70" rx="36" />
+      <rect class="node" x="470" y="485" width="120" height="70" rx="12" />
+      <rect class="node pulse" x="840" y="575" width="100" height="70" rx="36" />
+      <rect class="node" x="280" y="545" width="110" height="70" rx="12" />
+    </svg>
+    <div class="lg-login-veil"></div>
+  </div>
+  <div class="lg-login-card">
+    <h1 class="lg-login-brand">Lang<span>Canvas</span></h1>
+    <p class="lg-login-sub">Design and simulate LangGraph-style agents on a visual canvas — then get a sharp AI critique.</p>
+    <button type="button" class="lg-try-free-btn" id="try-free-btn" onclick="enterGuestMode()">
+      Try for free
+    </button>
+    <div class="lg-login-divider">or</div>
+    <button type="button" class="lg-google-btn" id="google-signin-btn" onclick="signInWithGoogle()">
+      <span class="g-badge" aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      </span>
+      Sign in · Pro monthly
+    </button>
+    <div class="lg-login-error" id="login-error"></div>
+    <p class="lg-login-note">Free trial: 5 AI critiques per network (IP), no account needed. Sign in unlocks the Pro monthly plan with a higher quota.</p>
+    <p class="lg-login-credit">Built by <a href="https://www.linkedin.com/in/leandroomargarcia/" target="_blank" rel="noopener noreferrer">Leandro Garcia</a></p>
+  </div>
+</div>
+
+<div class="lg-wrap lg-app" id="app-shell" hidden>
   <h2 class="sr-only">Visual simulator to practice designing LangGraph-style state graphs by dragging and connecting nodes</h2>
 
   <div class="lg-toolbar">
-    <div class="grp">
-      <button class="lg-btn" onclick="addNode('action')">+ action</button>
-      <button class="lg-btn" onclick="addNode('router')">+ conditional</button>
-      <button class="lg-btn" onclick="addNode('end')">+ end</button>
+    <div class="lg-toolbar-cluster">
+      <div class="lg-brand-mark">Lang<span>Canvas</span></div>
+      <div class="sep"></div>
+      <div class="grp">
+        <button class="lg-btn" onclick="addNode('action')">+ action</button>
+        <button class="lg-btn" onclick="addNode('router')">+ conditional</button>
+        <button class="lg-btn" onclick="addNode('end')">+ end</button>
+      </div>
     </div>
-    <div class="sep"></div>
-    <div class="grp">
+
+    <div class="lg-toolbar-cluster main">
+      <div class="lg-menu" id="templates-menu">
+        <button type="button" class="lg-btn" id="templates-btn" onclick="toggleMenu('templates-menu', event)">Templates ▾</button>
+        <div class="lg-menu-panel" id="templates-panel" role="menu">
+          <div class="lg-menu-group">Basics</div>
+          <button type="button" class="lg-menu-item" onclick="pickTemplate('simple')">Simple branch<span class="hint">one decision, two paths</span></button>
+          <button type="button" class="lg-menu-item" onclick="pickTemplate('retry')">Retry / repair loop<span class="hint">try → evaluate → retry or end</span></button>
+          <div class="lg-menu-group">Agents</div>
+          <button type="button" class="lg-menu-item" onclick="pickTemplate('react')">ReAct agent<span class="hint">agent → tools_condition → tools loop</span></button>
+          <button type="button" class="lg-menu-item" onclick="pickTemplate('reflection')">Reflection agent<span class="hint">generate → critique → refine loop</span></button>
+          <button type="button" class="lg-menu-item" onclick="pickTemplate('tool_calling')">Tool-calling agent<span class="hint">LLM chooses tools until done</span></button>
+          <button type="button" class="lg-menu-item" onclick="pickTemplate('plan_execute')">Plan-and-execute<span class="hint">plan steps, then run them</span></button>
+          <div class="lg-menu-group">Systems</div>
+          <button type="button" class="lg-menu-item" onclick="pickTemplate('rag')">RAG pipeline<span class="hint">retrieve → generate / fallback</span></button>
+          <button type="button" class="lg-menu-item" onclick="pickTemplate('supervisor')">Supervisor + 2 workers<span class="hint">route work to specialist agents</span></button>
+          <button type="button" class="lg-menu-item" onclick="pickTemplate('map_reduce')">Map-reduce<span class="hint">split → workers → merge</span></button>
+          <div class="lg-menu-group">Safety</div>
+          <button type="button" class="lg-menu-item" onclick="pickTemplate('hitl')">Human-in-the-loop<span class="hint">approve or revise before continue</span></button>
+          <button type="button" class="lg-menu-item" onclick="pickTemplate('guardrails')">Guardrails<span class="hint">check input and output</span></button>
+        </div>
+      </div>
+      <button class="lg-btn" onclick="validateGraph()">validate</button>
+      <button class="lg-btn primary" onclick="analyzeDesign()">analyze AI</button>
+    </div>
+
+    <div class="lg-toolbar-cluster right">
+      <div class="lg-menu align-right" id="export-menu">
+        <button type="button" class="lg-btn" onclick="toggleMenu('export-menu', event)">Export ▾</button>
+        <div class="lg-menu-panel" role="menu">
+          <button type="button" class="lg-menu-item" onclick="closeMenus(); exportPNG()">Export PNG</button>
+          <button type="button" class="lg-menu-item" onclick="closeMenus(); exportSVG()">Export SVG</button>
+          <button type="button" class="lg-menu-item" onclick="closeMenus(); exportJSON()">Export JSON</button>
+          <button type="button" class="lg-menu-item" onclick="closeMenus(); importJSONPrompt()">Import JSON</button>
+          <button type="button" class="lg-menu-item" onclick="closeMenus(); generateCode()">Generate code<span class="hint">live LangChain docs via MCP</span></button>
+        </div>
+      </div>
       <button class="lg-btn" id="delete-btn" onclick="toggleMode('delete')">delete</button>
-    </div>
-    <div class="sep"></div>
-    <div class="grp">
-      <button class="lg-btn" onclick="validateGraph()">validate graph</button>
-      <button class="lg-btn" onclick="analyzeDesign()">analyze design (AI)</button>
-    </div>
-    <div class="sep"></div>
-    <div class="grp">
-      <button class="lg-btn" onclick="exportPNG()">PNG</button>
-      <button class="lg-btn" onclick="exportSVG()">SVG</button>
-      <button class="lg-btn" onclick="exportJSON()">JSON</button>
-      <button class="lg-btn" onclick="importJSONPrompt()">import</button>
-      <button class="lg-btn" onclick="generateCode()">code</button>
-    </div>
-    <div class="sep"></div>
-    <div class="grp">
-      <select class="lg-select" id="example-select" onchange="loadExample(this.value)">
-        <option value="">load example…</option>
-        <option value="retry">retry loop</option>
-        <option value="simple">simple conditional branch</option>
-        <option value="chained">chained conditionals</option>
-      </select>
-      <button class="lg-btn warn" id="reset-all-btn" onclick="resetAll()">reset all</button>
+      <button class="lg-btn warn" id="reset-all-btn" onclick="resetAll()">reset</button>
+      <button class="lg-btn feedback" type="button" onclick="openFeedback()" title="Send feedback">feedback</button>
+      <div class="lg-user-chip" id="user-chip">
+        <img id="user-avatar" alt="" width="26" height="26" />
+        <div class="lg-user-meta">
+          <span class="name" id="user-name">—</span>
+          <span class="plan" id="user-plan">free</span>
+        </div>
+        <button type="button" class="lg-btn ghost" onclick="signOutUser()" title="Sign out">out</button>
+      </div>
     </div>
   </div>
 
@@ -225,6 +606,16 @@
     </div>
 
     <div class="lg-canvas-outer" id="canvas-outer">
+      <aside id="critique-panel" class="lg-critique-panel" hidden>
+        <div class="lg-critique-head">
+          <div>
+            <div class="lg-critique-eyebrow">AI review</div>
+            <h3>Design critique</h3>
+          </div>
+          <button type="button" class="lg-critique-close" onclick="closeCritique()" aria-label="Close critique">×</button>
+        </div>
+        <div id="critique-body" class="lg-critique-body"></div>
+      </aside>
       <div class="lg-canvas" id="canvas">
         <svg class="lg-edges" id="edge-svg">
           <defs id="edge-defs"></defs>
@@ -241,6 +632,234 @@
   </div>
 </div>
 
+<div id="feedback-overlay" class="lg-feedback-overlay" hidden>
+  <div class="lg-feedback-card" role="dialog" aria-labelledby="feedback-title">
+    <h3 id="feedback-title">Send feedback</h3>
+    <p id="feedback-status" class="lg-feedback-status" aria-live="polite"></p>
+    <label for="feedback-subject">Subject</label>
+    <input id="feedback-subject" type="text" value="LangCanvas feedback" maxlength="120" />
+    <label for="feedback-body">Message</label>
+    <textarea id="feedback-body" placeholder="What worked? What should improve?"></textarea>
+    <div class="lg-feedback-actions">
+      <button type="button" class="lg-btn" onclick="closeFeedback()">Cancel</button>
+      <button type="button" class="lg-btn primary" id="feedback-send-btn" onclick="sendFeedbackEmail()">Send</button>
+    </div>
+  </div>
+</div>
+
+<script src="/firebase-config.js"></script>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js';
+import {
+  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+} from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js';
+import {
+  getFirestore, doc, getDoc, setDoc, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
+
+const cfg = window.LANGCANVAS_FIREBASE || {};
+const configured = Boolean(cfg.apiKey && cfg.projectId && cfg.appId);
+const GUEST_KEY = 'langcanvas_guest';
+const GUEST_ID_KEY = 'langcanvas_guest_id';
+const GUEST_REMAINING_KEY = 'langcanvas_guest_remaining';
+const GUEST_LIMIT_UI = 5;
+
+let auth = null;
+let db = null;
+
+function setLoginError(msg) {
+  const el = document.getElementById('login-error');
+  if (el) el.textContent = msg || '';
+}
+
+function shortDisplayName(user) {
+  const full = (user && (user.displayName || user.email)) || 'User';
+  const first = String(full).trim().split(/\s+/)[0];
+  return first.length > 14 ? first.slice(0, 13) + '…' : first;
+}
+
+function isGuestMode() {
+  try { return localStorage.getItem(GUEST_KEY) === '1'; } catch (_) { return false; }
+}
+
+function setGuestMode(on) {
+  try {
+    if (on) localStorage.setItem(GUEST_KEY, '1');
+    else localStorage.removeItem(GUEST_KEY);
+  } catch (_) { /* ignore */ }
+}
+
+function ensureGuestId() {
+  try {
+    let id = localStorage.getItem(GUEST_ID_KEY);
+    if (id && /^[a-f0-9-]{16,64}$/i.test(id)) return id.toLowerCase();
+    id = (crypto.randomUUID && crypto.randomUUID()) ||
+      ('g-' + Date.now().toString(16) + '-' + Math.random().toString(16).slice(2, 10));
+    localStorage.setItem(GUEST_ID_KEY, id);
+    return id;
+  } catch (_) {
+    return null;
+  }
+}
+
+function getGuestRemaining() {
+  try {
+    const raw = localStorage.getItem(GUEST_REMAINING_KEY);
+    if (raw == null || raw === '') return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? Math.max(0, n) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function setGuestRemaining(n) {
+  try {
+    if (typeof n === 'number' && Number.isFinite(n)) {
+      localStorage.setItem(GUEST_REMAINING_KEY, String(Math.max(0, n)));
+    }
+  } catch (_) { /* ignore */ }
+}
+
+function updateGuestPlanLabel() {
+  const planEl = document.getElementById('user-plan');
+  if (!planEl) return;
+  const rem = getGuestRemaining();
+  planEl.textContent = rem == null
+    ? ('trial · ' + GUEST_LIMIT_UI + ' left')
+    : ('trial · ' + rem + ' left');
+}
+
+function showGuestApp() {
+  ensureGuestId();
+  document.getElementById('login-gate').hidden = true;
+  document.getElementById('app-shell').hidden = false;
+  const nameEl = document.getElementById('user-name');
+  nameEl.textContent = 'Guest';
+  nameEl.title = 'Try for free';
+  const avatar = document.getElementById('user-avatar');
+  avatar.removeAttribute('src');
+  avatar.style.display = 'none';
+  updateGuestPlanLabel();
+}
+
+function showApp(user) {
+  setGuestMode(false);
+  document.getElementById('login-gate').hidden = true;
+  document.getElementById('app-shell').hidden = false;
+  const nameEl = document.getElementById('user-name');
+  nameEl.textContent = shortDisplayName(user);
+  nameEl.title = user.displayName || user.email || '';
+  const avatar = document.getElementById('user-avatar');
+  if (user.photoURL) {
+    avatar.src = user.photoURL;
+    avatar.style.display = '';
+  } else {
+    avatar.removeAttribute('src');
+    avatar.style.display = 'none';
+  }
+}
+
+function showLogin() {
+  document.getElementById('login-gate').hidden = false;
+  document.getElementById('app-shell').hidden = true;
+}
+
+async function ensureUserProfile(user) {
+  if (!db) return 'free';
+  const ref = doc(db, 'users', user.uid);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    await setDoc(ref, {
+      email: user.email || '',
+      displayName: user.displayName || '',
+      photoURL: user.photoURL || '',
+      plan: 'free',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return 'free';
+  }
+  const data = snap.data() || {};
+  await setDoc(ref, {
+    displayName: user.displayName || data.displayName || '',
+    photoURL: user.photoURL || data.photoURL || '',
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+  return data.plan === 'pro' ? 'pro' : 'free';
+}
+
+window.getIdTokenForApi = async function getIdTokenForApi() {
+  if (!auth || !auth.currentUser) throw new Error('Sign in required.');
+  return auth.currentUser.getIdToken();
+};
+
+window.isLangCanvasGuest = function isLangCanvasGuest() {
+  return !auth?.currentUser && isGuestMode();
+};
+
+window.getGuestIdForApi = function getGuestIdForApi() {
+  return ensureGuestId();
+};
+
+window.enterGuestMode = function enterGuestMode() {
+  setLoginError('');
+  setGuestMode(true);
+  ensureGuestId();
+  if (getGuestRemaining() == null) setGuestRemaining(GUEST_LIMIT_UI);
+  showGuestApp();
+};
+
+window.signInWithGoogle = async function signInWithGoogle() {
+  setLoginError('');
+  if (!configured || !auth) {
+    setLoginError('Firebase is not configured. Add your web config to firebase-config.js.');
+    return;
+  }
+  const btn = document.getElementById('google-signin-btn');
+  btn.disabled = true;
+  try {
+    setGuestMode(false);
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    await signInWithPopup(auth, provider);
+  } catch (err) {
+    setLoginError(err && err.message ? err.message : 'Sign-in failed.');
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+window.signOutUser = async function signOutUser() {
+  setGuestMode(false);
+  if (auth && auth.currentUser) await signOut(auth);
+  else showLogin();
+};
+
+if (!configured) {
+  setLoginError('Firebase is not configured. Add your web config to firebase-config.js (see README).');
+  // Guest trial still works without Firebase web config (API uses Admin SDK).
+  if (isGuestMode()) showGuestApp();
+} else {
+  const app = initializeApp(cfg);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      if (isGuestMode()) showGuestApp();
+      else showLogin();
+      return;
+    }
+    try {
+      const plan = await ensureUserProfile(user);
+      document.getElementById('user-plan').textContent = plan === 'pro' ? 'pro' : 'member';
+    } catch (_) {
+      document.getElementById('user-plan').textContent = 'member';
+    }
+    showApp(user);
+  });
+}
+</script>
 <script>
 // ── CONFIG ──────────────────────────────────────────────
 // To enable AI design analysis, paste your backend URL here
@@ -256,6 +875,9 @@ let mode = null;
 let edgeDraw = null;
 let dragging = null;
 let dragOffset = { x: 0, y: 0 };
+let selected = new Set();
+let dragGroupOrigins = null; // { id: {x,y} } when moving a multi-selection
+let marquee = null; // { x0, y0, x1, y1, additive }
 let stateVars = [];
 let runCurrent = null;
 let runSteps = 0;
@@ -388,7 +1010,7 @@ function renderNodes() {
     el.style.color = n.color;
     el.dataset.id = n.id;
     let inner = '<div class="lg-node-label">' + escapeHtml(n.label) + '</div>';
-    if (n.type === 'action' && n.effect) {
+    if ((n.type === 'action' || n.type === 'router') && n.effect) {
       inner += '<div class="lg-effect">' + escapeHtml(n.effect) + '</div>';
     }
     if (runCurrent === n.id && n.type === 'router') {
@@ -399,6 +1021,7 @@ function renderNodes() {
     }
     el.innerHTML = inner;
     if (runCurrent === n.id) el.classList.add('active-run');
+    if (selected.has(n.id)) el.classList.add('selected');
     el.addEventListener('mousedown', (ev) => onNodeMouseDown(ev, n.id));
     el.addEventListener('click', (ev) => onNodeClick(ev, n.id));
     el.addEventListener('dblclick', (ev) => onNodeDblClick(ev, n.id));
@@ -413,11 +1036,143 @@ function renderNodes() {
     }
     canvas.appendChild(el);
   });
+  ensureCanvasFitsContent();
   renderEdges();
+}
+
+const CANVAS_MIN_W = 720;
+const CANVAS_MIN_H = 520;
+const CANVAS_PAD = 56;
+/** Extra room so left/right lateral edge buses are never clipped at the canvas edge. */
+const EDGE_BUS = 96;
+
+/** Grow the drawable canvas so nodes/edges are never clipped by a fixed box. */
+function ensureCanvasFitsContent(opts) {
+  const noShift = opts && opts.noShift;
+  const canvas = document.getElementById('canvas');
+  const outer = document.getElementById('canvas-outer');
+  if (!canvas) return false;
+  const ids = Object.keys(nodes);
+  const viewW = outer ? Math.max(outer.clientWidth, CANVAS_MIN_W) : CANVAS_MIN_W;
+  const viewH = outer ? Math.max(outer.clientHeight, CANVAS_MIN_H) : CANVAS_MIN_H;
+  if (!ids.length) {
+    canvas.style.width = viewW + 'px';
+    canvas.style.height = viewH + 'px';
+    return false;
+  }
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  ids.forEach(id => {
+    const r = nodeRect(id);
+    minX = Math.min(minX, r.x);
+    minY = Math.min(minY, r.y);
+    maxX = Math.max(maxX, r.x + r.w);
+    maxY = Math.max(maxY, r.y + r.h);
+  });
+
+  let shifted = false;
+  let dx = 0, dy = 0;
+  // Leave EDGE_BUS on the left/top so return loops (plan-execute, etc.) stay visible.
+  const padX = CANVAS_PAD + EDGE_BUS;
+  const padY = CANVAS_PAD;
+  if (!noShift) {
+    if (minX < padX) dx = Math.round(padX - minX);
+    if (minY < padY) dy = Math.round(padY - minY);
+  }
+  if (dx || dy) {
+    shifted = true;
+    ids.forEach(id => {
+      nodes[id].x += dx;
+      nodes[id].y += dy;
+      const el = document.querySelector('.lg-node[data-id="' + id + '"]');
+      if (el) {
+        el.style.left = nodes[id].x + 'px';
+        el.style.top = nodes[id].y + 'px';
+      }
+    });
+    minX += dx; minY += dy; maxX += dx; maxY += dy;
+    Object.keys(edgeRouteCache).forEach(k => { delete edgeRouteCache[k]; });
+    Object.keys(edgeBusCache).forEach(k => { delete edgeBusCache[k]; });
+  }
+
+  // Fill the visible viewport, but never smaller than the graph (+ padding for edge buses).
+  const w = Math.max(viewW, Math.ceil(maxX + CANVAS_PAD + EDGE_BUS));
+  const h = Math.max(viewH, Math.ceil(maxY + CANVAS_PAD + EDGE_BUS));
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  return shifted;
 }
 
 function escapeHtml(s) {
   const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML;
+}
+
+function inlineMarkdown(s) {
+  return escapeHtml(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+
+function parseCritiqueBullet(raw) {
+  const cleaned = String(raw || '').replace(/^\s*[-*•]\s+/, '').trim();
+  const titled = cleaned.match(/^\*\*(.+?)\*\*\s*:?\s*(.*)$/);
+  if (titled) {
+    return { title: titled[1].trim().replace(/:$/, ''), body: titled[2].trim() };
+  }
+  const plainTitle = cleaned.match(/^([^:]{3,60}):\s+(.+)$/);
+  if (plainTitle) {
+    return { title: plainTitle[1].trim(), body: plainTitle[2].trim() };
+  }
+  return { title: '', body: cleaned };
+}
+
+function formatCritiqueHtml(text) {
+  const raw = String(text || '').replace(/\r\n/g, '\n').trim();
+  if (!raw) return '<div class="lg-critique-fallback">(no response)</div>';
+
+  const lines = raw.split('\n');
+  const lead = [];
+  const bullets = [];
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) continue;
+    if (/^[-*•]\s+/.test(t)) bullets.push(t);
+    else if (!bullets.length) lead.push(t);
+    else bullets.push('* ' + t);
+  }
+
+  if (!bullets.length) {
+    return '<div class="lg-critique-fallback">' + inlineMarkdown(raw) + '</div>';
+  }
+
+  let html = '';
+  if (lead.length) {
+    html += '<p class="lg-critique-lead">' + inlineMarkdown(lead.join(' ')) + '</p>';
+  }
+  html += '<ul class="lg-critique-list">';
+  for (const b of bullets) {
+    const item = parseCritiqueBullet(b);
+    const isSuggestion = /suggest|streamlined|proposed flow|recommended flow/i.test(item.title + ' ' + item.body);
+    const title = item.title || (isSuggestion ? 'Suggested flow' : 'Note');
+    html += '<li class="lg-critique-item' + (isSuggestion ? ' is-suggestion' : '') + '">' +
+      '<span class="dot" aria-hidden="true"></span>' +
+      '<div>' +
+        '<p class="title">' + escapeHtml(title) + '</p>' +
+        (item.body ? '<p class="body">' + inlineMarkdown(item.body) + '</p>' : '') +
+      '</div>' +
+    '</li>';
+  }
+  html += '</ul>';
+  return html;
+}
+
+function showCritique(text) {
+  const panel = document.getElementById('critique-panel');
+  const body = document.getElementById('critique-body');
+  body.innerHTML = formatCritiqueHtml(text);
+  panel.hidden = false;
+}
+
+function closeCritique() {
+  document.getElementById('critique-panel').hidden = true;
 }
 
 function nodeCenter(id) {
@@ -457,6 +1212,14 @@ function anchorPoint(id, side, margin) {
 
 function chooseSides(dx, dy) {
   const BIAS = 36;
+  // Prefer vertical anchors whenever there is a clear up/down component.
+  // Keeps fan-outs like supervisor→writer/researcher exiting from the bottom
+  // (canonical diagrams) instead of shooting out the sides.
+  if (Math.abs(dy) > 48 && Math.abs(dy) + 100 >= Math.abs(dx)) {
+    return dy >= 0
+      ? { exitSide: 'bottom', entrySide: 'top' }
+      : { exitSide: 'top', entrySide: 'bottom' };
+  }
   if (Math.abs(dx) > Math.abs(dy) + BIAS) {
     return dx >= 0 ? { exitSide: 'right', entrySide: 'left' } : { exitSide: 'left', entrySide: 'right' };
   }
@@ -490,7 +1253,15 @@ function pointsMidOnPath(points) {
 function buildOrthogonalPath(x1, y1, x2, y2, offsetMag, perp) {
   const dx = x2 - x1, dy = y2 - y1;
   let raw;
-  if (Math.abs(dy) + 30 >= Math.abs(dx)) {
+  // Snap nearly-aligned endpoints so vertical/horizontal links stay straight.
+  const SNAP = 10;
+  if (!offsetMag && Math.abs(dx) <= SNAP && Math.abs(dy) > SNAP) {
+    const x = Math.round((x1 + x2) / 2);
+    raw = [[x, y1], [x, y2]];
+  } else if (!offsetMag && Math.abs(dy) <= SNAP && Math.abs(dx) > SNAP) {
+    const y = Math.round((y1 + y2) / 2);
+    raw = [[x1, y], [x2, y]];
+  } else if (Math.abs(dy) + 30 >= Math.abs(dx)) {
     if (offsetMag) {
       const ox = x1 + perp.px * offsetMag;
       raw = [[x1, y1], [ox, y1], [ox, y2], [x2, y2]];
@@ -555,19 +1326,72 @@ function renderEdges(dragMode) {
     let geo;
     if (useLateral) {
       const lane = pairIdx;
-      const exit = anchorPoint(e.from, 'right', 3);
-      const entry = anchorPoint(e.to, 'right', 9);
-      let busX;
-      if (dragMode && edgeBusCache[e.id] !== undefined) {
-        busX = edgeBusCache[e.id];
+      let cached = (dragMode && edgeBusCache[e.id] !== undefined) ? edgeBusCache[e.id] : null;
+      let pts;
+      if (cached && cached.pts) {
+        pts = cached.pts;
       } else {
-        const graphRight = Math.max.apply(null, Object.keys(nodes)
-          .filter(id => !(dragMode && id === dragging))
-          .map(id => { const r = nodeRect(id); return r.x + r.w; }));
-        busX = graphRight + 50 + lane * 34;
-        edgeBusCache[e.id] = busX;
+        const ids = Object.keys(nodes).filter(id => !(dragMode && id === dragging));
+        const rects = ids.map(id => nodeRect(id));
+        const graphRight = Math.max.apply(null, rects.map(r => r.x + r.w));
+        const graphLeft = Math.min.apply(null, rects.map(r => r.x));
+        const graphBottom = Math.max.apply(null, rects.map(r => r.y + r.h));
+        const busRight = graphRight + 44 + lane * 24;
+        const busLeft = graphLeft - 44 - lane * 24;
+        const busBottom = graphBottom + 36 + lane * 28;
+        const obstacles = ids.filter(id => id !== e.from && id !== e.to).map(id => nodeRect(id));
+
+        const exitR = anchorPoint(e.from, 'right', 3);
+        const entryR = anchorPoint(e.to, 'right', 9);
+        const exitL = anchorPoint(e.from, 'left', 3);
+        const entryL = anchorPoint(e.to, 'left', 9);
+        const exitB = anchorPoint(e.from, 'bottom', 3);
+        // Outer under-detour: down, out to a side bus, then up — never vertically through the source node.
+        const preferLeft = a.x <= (graphLeft + graphRight) / 2;
+        const belowBusX = preferLeft ? busLeft : busRight;
+        const belowEntry = preferLeft ? entryL : entryR;
+        const belowPts = [
+          [exitB.x, exitB.y],
+          [exitB.x, busBottom],
+          [belowBusX, busBottom],
+          [belowBusX, belowEntry.y],
+          [belowEntry.x, belowEntry.y],
+        ];
+
+        const rightPts = [[exitR.x, exitR.y], [busRight, exitR.y], [busRight, entryR.y], [entryR.x, entryR.y]];
+        const leftPts = [[exitL.x, exitL.y], [busLeft, exitL.y], [busLeft, entryL.y], [entryL.x, entryL.y]];
+
+        const rightBlocked = pathBlocked(rightPts, obstacles);
+        const leftBlocked = pathBlocked(leftPts, obstacles);
+        const belowBlocked = pathBlocked(belowPts, obstacles);
+
+        let choice;
+        // Upward return from a side worker (e.g. writer/researcher → supervisor, tools → agent).
+        const upwardFromLeft = dy < 0 && a.x < b.x - 40;
+        const upwardFromRight = dy < 0 && a.x > b.x + 40;
+        // Vertical spine loop (e.g. steps left? → execute step): prefer right so it stays on-canvas.
+        const verticalUpLoop = dy < 0 && Math.abs(dx) < 80;
+        // For return edges (pairIdx > 0) prefer the outer under-detour so we don't clip siblings.
+        if (upwardFromLeft && !leftBlocked) choice = 'left';
+        else if (upwardFromRight && !rightBlocked) choice = 'right';
+        else if (verticalUpLoop && !rightBlocked) choice = 'right';
+        else if (pairIdx > 0 && !belowBlocked) choice = 'below';
+        else if (rightBlocked && leftBlocked && !belowBlocked) choice = 'below';
+        else if (rightBlocked && !leftBlocked) choice = 'left';
+        else if (leftBlocked && !rightBlocked) choice = 'right';
+        else if (!rightBlocked && !leftBlocked) {
+          choice = preferLeft ? 'left' : 'right';
+          const preferredPts = choice === 'left' ? leftPts : rightPts;
+          if (pathBlocked(preferredPts, obstacles) && !belowBlocked) choice = 'below';
+        } else {
+          choice = !belowBlocked ? 'below' : (preferLeft ? 'left' : 'right');
+        }
+
+        if (choice === 'below') pts = belowPts;
+        else if (choice === 'left') pts = leftPts;
+        else pts = rightPts;
+        edgeBusCache[e.id] = { pts: pts };
       }
-      const pts = [[exit.x, exit.y], [busX, exit.y], [busX, entry.y], [entry.x, entry.y]];
       const d = 'M ' + pts.map(p => p[0] + ' ' + p[1]).join(' L ');
       geo = { d, points: pts, mid: pointsMidOnPath(pts) };
     } else {
@@ -627,47 +1451,199 @@ function onEdgeDblClick(edgeId) {
   });
 }
 
+function paintSelection() {
+  document.querySelectorAll('.lg-node').forEach(el => {
+    el.classList.toggle('selected', selected.has(el.dataset.id));
+  });
+}
+
+function clearSelection() {
+  selected.clear();
+  paintSelection();
+}
+
+function selectOnly(id) {
+  selected.clear();
+  if (id && nodes[id]) selected.add(id);
+  paintSelection();
+}
+
+function toggleSelected(id) {
+  if (!nodes[id]) return;
+  if (selected.has(id)) selected.delete(id);
+  else selected.add(id);
+  paintSelection();
+}
+
+function deleteNodesByIds(ids) {
+  const list = Array.isArray(ids) ? ids : [...ids];
+  list.forEach(id => {
+    if (id === 'start') return; // keep graph rooted
+    delete nodes[id];
+    edges = edges.filter(e => e.from !== id && e.to !== id);
+    selected.delete(id);
+  });
+  renderNodes();
+}
+
+function isMultiSelectModifier(ev) {
+  // Windows/Linux: Ctrl · macOS: Command (metaKey)
+  return !!(ev && (ev.ctrlKey || ev.metaKey));
+}
+
 function onNodeMouseDown(ev, id) {
   if (mode === 'delete') return;
+  if (ev.button !== 0) return;
+  ev.stopPropagation();
+  ev.preventDefault();
+
+  if (isMultiSelectModifier(ev)) {
+    toggleSelected(id);
+    return;
+  }
+
+  if (!selected.has(id)) selectOnly(id);
+
   dragging = id;
-  const el = ev.currentTarget;
-  el.classList.add('dragging');
   const pt = clientToCanvas(ev);
   dragOffset.x = pt.x - nodes[id].x;
   dragOffset.y = pt.y - nodes[id].y;
-  ev.preventDefault();
+  dragGroupOrigins = {};
+  const group = selected.has(id) && selected.size ? [...selected] : [id];
+  group.forEach(nid => {
+    if (nodes[nid]) dragGroupOrigins[nid] = { x: nodes[nid].x, y: nodes[nid].y };
+  });
+  group.forEach(nid => {
+    const el = document.querySelector('.lg-node[data-id="' + nid + '"]');
+    if (el) el.classList.add('dragging');
+  });
+}
+
+function updateMarqueeEl() {
+  if (!marquee) return;
+  let box = document.getElementById('sel-marquee');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'sel-marquee';
+    box.className = 'lg-marquee';
+    document.getElementById('canvas').appendChild(box);
+  }
+  const x = Math.min(marquee.x0, marquee.x1);
+  const y = Math.min(marquee.y0, marquee.y1);
+  const w = Math.abs(marquee.x1 - marquee.x0);
+  const h = Math.abs(marquee.y1 - marquee.y0);
+  box.style.left = x + 'px';
+  box.style.top = y + 'px';
+  box.style.width = w + 'px';
+  box.style.height = h + 'px';
+}
+
+function finishMarquee() {
+  if (!marquee) return;
+  const x1 = Math.min(marquee.x0, marquee.x1);
+  const y1 = Math.min(marquee.y0, marquee.y1);
+  const x2 = Math.max(marquee.x0, marquee.x1);
+  const y2 = Math.max(marquee.y0, marquee.y1);
+  const additive = marquee.additive;
+  if (!additive) selected.clear();
+  Object.keys(nodes).forEach(id => {
+    const r = nodeRect(id);
+    const hit = r.x < x2 && r.x + r.w > x1 && r.y < y2 && r.y + r.h > y1;
+    if (hit) selected.add(id);
+  });
+  const box = document.getElementById('sel-marquee');
+  if (box) box.remove();
+  marquee = null;
+  paintSelection();
 }
 
 document.addEventListener('mousemove', (ev) => {
-  if (!dragging) return;
+  if (marquee) {
+    const pt = clientToCanvas(ev);
+    marquee.x1 = pt.x;
+    marquee.y1 = pt.y;
+    updateMarqueeEl();
+    return;
+  }
+  if (!dragging || !dragGroupOrigins) return;
   const pt = clientToCanvas(ev);
-  let x = pt.x - dragOffset.x;
-  let y = pt.y - dragOffset.y;
-  x = Math.max(0, x); y = Math.max(0, y);
-  nodes[dragging].x = x; nodes[dragging].y = y;
-  const el = document.querySelector('.lg-node[data-id="' + dragging + '"]');
-  if (el) { el.style.left = x + 'px'; el.style.top = y + 'px'; }
+  const primaryOrigin = dragGroupOrigins[dragging];
+  if (!primaryOrigin) return;
+  let dx = (pt.x - dragOffset.x) - primaryOrigin.x;
+  let dy = (pt.y - dragOffset.y) - primaryOrigin.y;
+  Object.keys(dragGroupOrigins).forEach(nid => {
+    if (!nodes[nid]) return;
+    const o = dragGroupOrigins[nid];
+    const x = o.x + dx;
+    const y = o.y + dy;
+    nodes[nid].x = x;
+    nodes[nid].y = y;
+    const el = document.querySelector('.lg-node[data-id="' + nid + '"]');
+    if (el) { el.style.left = x + 'px'; el.style.top = y + 'px'; }
+  });
+  ensureCanvasFitsContent({ noShift: true });
   renderEdges(true);
 });
 
 document.addEventListener('mouseup', () => {
+  if (marquee) {
+    finishMarquee();
+    return;
+  }
   if (dragging) {
-    const el = document.querySelector('.lg-node[data-id="' + dragging + '"]');
-    if (el) el.classList.remove('dragging');
+    Object.keys(dragGroupOrigins || {}).forEach(nid => {
+      const el = document.querySelector('.lg-node[data-id="' + nid + '"]');
+      if (el) el.classList.remove('dragging');
+    });
     dragging = null;
+    dragGroupOrigins = null;
     Object.keys(edgeRouteCache).forEach(k => delete edgeRouteCache[k]);
     Object.keys(edgeBusCache).forEach(k => delete edgeBusCache[k]);
+    ensureCanvasFitsContent();
     renderEdges();
   }
 });
 
 function onNodeClick(ev, id) {
+  ev.stopPropagation();
   if (mode === 'delete') {
-    delete nodes[id];
-    edges = edges.filter(e => e.from !== id && e.to !== id);
-    renderNodes();
+    if (selected.has(id) && selected.size > 1) deleteNodesByIds([...selected]);
+    else deleteNodesByIds([id]);
   }
 }
+
+function onCanvasMouseDown(ev) {
+  if (mode === 'delete' || edgeDraw) return;
+  if (ev.button !== 0) return;
+  const t = ev.target;
+  if (t.closest && (t.closest('.lg-node') || t.closest('.lg-handle') || t.closest('.lg-zoom-glass') || t.closest('.lg-critique-panel') || t.closest('.lg-inline-editor'))) return;
+  // Ignore edge hit targets (delete/label) — still allow empty canvas / svg background
+  if (t.closest && t.closest('.lg-edge-hit, .lg-edge-delete, .lg-edge-label')) return;
+
+  const pt = clientToCanvas(ev);
+  const additive = isMultiSelectModifier(ev);
+  marquee = { x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y, additive: additive };
+  if (!additive) clearSelection();
+  updateMarqueeEl();
+  ev.preventDefault();
+}
+
+document.addEventListener('keydown', (ev) => {
+  const tag = (ev.target && ev.target.tagName) ? ev.target.tagName.toLowerCase() : '';
+  if (tag === 'input' || tag === 'textarea' || (ev.target && ev.target.isContentEditable)) return;
+  if ((ev.key === 'Delete' || ev.key === 'Backspace') && selected.size) {
+    ev.preventDefault();
+    deleteNodesByIds([...selected]);
+  }
+  if (ev.key === 'Escape') {
+    clearSelection();
+    if (marquee) {
+      const box = document.getElementById('sel-marquee');
+      if (box) box.remove();
+      marquee = null;
+    }
+  }
+});
 
 function clientToCanvas(ev) {
   const canvasOuter = document.getElementById('canvas-outer');
@@ -1067,70 +2043,559 @@ function resetAll() {
   const btn = document.getElementById('reset-all-btn');
   if (!resetConfirmPending) {
     resetConfirmPending = true;
-    btn.textContent = 'confirm reset';
+    btn.textContent = 'confirm?';
     resetConfirmTimeout = setTimeout(() => {
       resetConfirmPending = false;
-      btn.textContent = 'reset all';
+      btn.textContent = 'reset';
     }, 3000);
     return;
   }
   clearTimeout(resetConfirmTimeout);
   resetConfirmPending = false;
-  btn.textContent = 'reset all';
+  btn.textContent = 'reset';
   nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = [];
+  selected.clear();
   ensureStartNode();
   resetRun();
   renderState();
   renderNodes();
 }
 
-function loadExample(key) {
-  if (!key) return;
+function link(from, to, label) {
+  edges.push({ id: uid('e'), from: from, to: to, label: label || '' });
+}
+
+function setProblem(text) {
+  appendOrSetProblem(text);
+}
+
+function graphHasContent() {
+  return Object.keys(nodes).length > 1 || edges.length > 0;
+}
+
+function closeMenus() {
+  document.querySelectorAll('.lg-menu.open').forEach(m => m.classList.remove('open'));
+}
+
+function toggleMenu(id, ev) {
+  if (ev) ev.stopPropagation();
+  const menu = document.getElementById(id);
+  if (!menu) return;
+  const wasOpen = menu.classList.contains('open');
+  closeMenus();
+  if (!wasOpen) menu.classList.add('open');
+}
+
+function pickTemplate(key) {
+  closeMenus();
+  loadTemplate(key); // additive: stacks onto the current canvas
+}
+
+function clearCanvasGraph() {
   nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = [];
+  selected.clear();
   ensureStartNode();
-  if (key === 'retry') {
-    const plan = addNode('action', 260, 40, 'plan'); nodes[plan].effect = 'decide what to search';
-    const tool = addNode('action', 260, 170, 'search'); nodes[tool].effect = 'increment attempts by 1';
-    const ev = addNode('router', 260, 300, 'evaluate');
-    const end = addNode('end', 500, 300, 'end');
-    edges.push({ id: uid('e'), from: 'start', to: plan, label: '' });
-    edges.push({ id: uid('e'), from: plan, to: tool, label: '' });
-    edges.push({ id: uid('e'), from: tool, to: ev, label: '' });
-    edges.push({ id: uid('e'), from: ev, to: plan, label: 'retry' });
-    edges.push({ id: uid('e'), from: ev, to: end, label: 'enough' });
-    stateVars = [{ key: 'attempts', val: '0' }, { key: 'enough', val: 'false' }];
-  } else if (key === 'simple') {
-    const check = addNode('router', 260, 60, 'has data?');
-    const a = addNode('action', 480, 0, 'answer directly');
-    const b = addNode('action', 480, 140, 'search first');
-    const end1 = addNode('end', 700, 0, 'end');
-    const end2 = addNode('end', 700, 140, 'end');
-    edges.push({ id: uid('e'), from: 'start', to: check, label: '' });
-    edges.push({ id: uid('e'), from: check, to: a, label: 'yes' });
-    edges.push({ id: uid('e'), from: check, to: b, label: 'no' });
-    edges.push({ id: uid('e'), from: a, to: end1, label: '' });
-    edges.push({ id: uid('e'), from: b, to: end2, label: '' });
-  } else if (key === 'chained') {
-    const c1 = addNode('router', 260, 60, 'input clear?');
-    const ask = addNode('action', 260, 220, 'ask for clarification');
-    const c2 = addNode('router', 500, 60, 'needs tool?');
-    const direct = addNode('action', 740, 0, 'respond');
-    const useTool = addNode('action', 740, 140, 'use tool');
-    const end = addNode('end', 950, 60, 'end');
-    edges.push({ id: uid('e'), from: 'start', to: c1, label: '' });
-    edges.push({ id: uid('e'), from: c1, to: c2, label: 'yes' });
-    edges.push({ id: uid('e'), from: c1, to: ask, label: 'no' });
-    edges.push({ id: uid('e'), from: ask, to: c1, label: 'retry' });
-    edges.push({ id: uid('e'), from: c2, to: direct, label: 'no' });
-    edges.push({ id: uid('e'), from: c2, to: useTool, label: 'yes' });
-    edges.push({ id: uid('e'), from: direct, to: end, label: '' });
-    edges.push({ id: uid('e'), from: useTool, to: end, label: '' });
+}
+
+/** When true, templates append instead of wiping the canvas. */
+let _addingTemplate = false;
+
+function placeStart(x, y) {
+  if (_addingTemplate) return; // keep existing start where the user left it
+  if (nodes.start) { nodes.start.x = x; nodes.start.y = y; }
+}
+
+function computeGraphBounds(ids) {
+  const list = ids || Object.keys(nodes);
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  list.forEach(id => {
+    const r = nodeRect(id);
+    minX = Math.min(minX, r.x);
+    minY = Math.min(minY, r.y);
+    maxX = Math.max(maxX, r.x + r.w);
+    maxY = Math.max(maxY, r.y + r.h);
+  });
+  if (!Number.isFinite(minX)) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  return { minX, minY, maxX, maxY };
+}
+
+function applyTemplateState(vars) {
+  if (!_addingTemplate) {
+    stateVars = vars.slice();
+    return;
   }
-  document.getElementById('example-select').value = '';
+  const have = new Set(stateVars.map(v => v.key));
+  vars.forEach(v => {
+    if (!have.has(v.key)) {
+      stateVars.push({ key: v.key, val: v.val });
+      have.add(v.key);
+    }
+  });
+}
+
+function appendOrSetProblem(text) {
+  const el = document.getElementById('problem-desc');
+  if (!el) return;
+  const next = text || '';
+  if (_addingTemplate && el.value.trim()) {
+    el.value = el.value.trim() + '\n\n' + next;
+  } else {
+    el.value = next;
+  }
+}
+
+/** Place newly added template nodes to the right of the existing graph. */
+function layoutAddedTemplate(beforeIds, beforeBounds, startPos) {
+  if (startPos && nodes.start) {
+    nodes.start.x = startPos.x;
+    nodes.start.y = startPos.y;
+  }
+  const newIds = Object.keys(nodes).filter(id => id !== 'start' && !beforeIds.has(id));
+  if (!newIds.length) return newIds;
+  renderNodes();
+  const nb = computeGraphBounds(newIds);
+  const gap = 160;
+  // Only shift right — keep the template's internal vertical spacing intact.
+  const dx = Math.round(beforeBounds.maxX + gap - nb.minX);
+  if (dx !== 0) {
+    newIds.forEach(id => { nodes[id].x += dx; });
+  }
+  Object.keys(edgeRouteCache).forEach(k => { delete edgeRouteCache[k]; });
+  Object.keys(edgeBusCache).forEach(k => { delete edgeBusCache[k]; });
+  return newIds;
+}
+
+/** Canonical ReAct diagram layout (compact, fits a normal viewport). */
+function applyReactLayout(agentId, condId, toolsId, endId) {
+  // Keep the whole figure near top-left so it doesn't float in empty space on wide monitors.
+  const CX = 300;
+  const Y0 = 36;
+  renderNodes();
+  const place = (id, cx, y) => {
+    const n = nodes[id];
+    if (!n) return;
+    const el = document.querySelector('.lg-node[data-id="' + id + '"]');
+    const w = el ? el.offsetWidth : 140;
+    n.x = Math.round(cx - w / 2);
+    n.y = y;
+  };
+  // Vertical spine: start → agent → tools_condition → end
+  // tools sits to the left; yes goes left, no goes down; tools loops back to agent.
+  if (!_addingTemplate) place('start', CX, Y0);
+  place(agentId, CX, Y0 + 110);
+  place(condId, CX, Y0 + 240);
+  place(toolsId, CX - 210, Y0 + 240);
+  place(endId, CX, Y0 + 390);
+  Object.keys(edgeRouteCache).forEach(k => { delete edgeRouteCache[k]; });
+  Object.keys(edgeBusCache).forEach(k => { delete edgeBusCache[k]; });
+  renderNodes();
+}
+
+/** Canonical Reflection diagram: generate → should_continue → end, with reflect loop on the left. */
+/** Canonical Supervisor: start → supervisor → (writer | researcher | end), handoffs return on the sides. */
+function applySupervisorLayout(supervisorId, writerId, researcherId, endId) {
+  // Match the reference diagram:
+  //   start → supervisor; fan-out from BOTTOM to writer / end / researcher;
+  //   compact side handoffs back into supervisor.
+  const CX = 360;
+  const Y0 = 36;
+  const SIDE = 210; // close enough that write/research exit bottom, not sides
+  renderNodes();
+  const place = (id, cx, y) => {
+    const n = nodes[id];
+    if (!n) return;
+    const el = document.querySelector('.lg-node[data-id="' + id + '"]');
+    const w = el ? el.offsetWidth : 140;
+    n.x = Math.round(cx - w / 2);
+    n.y = y;
+  };
+  if (!_addingTemplate) place('start', CX, Y0);
+  place(supervisorId, CX, Y0 + 120);
+  // Workers sit below supervisor, end further down on the center spine.
+  place(writerId, CX - SIDE, Y0 + 300);
+  place(researcherId, CX + SIDE, Y0 + 300);
+  place(endId, CX, Y0 + 460);
+  Object.keys(edgeRouteCache).forEach(k => { delete edgeRouteCache[k]; });
+  Object.keys(edgeBusCache).forEach(k => { delete edgeBusCache[k]; });
+  renderNodes();
+}
+
+/** Canonical Simple branch: start → has data? → (answer directly | search first) → end / end */
+function applySimpleBranchLayout(checkId, yesActionId, noActionId, endYesId, endNoId) {
+  const CX = 360;
+  const Y0 = 36;
+  const LEFT = CX - 220;
+  const RIGHT = CX + 220;
+  renderNodes();
+  const place = (id, cx, y) => {
+    const n = nodes[id];
+    if (!n) return;
+    const el = document.querySelector('.lg-node[data-id="' + id + '"]');
+    const w = el ? el.offsetWidth : 140;
+    n.x = Math.round(cx - w / 2);
+    n.y = y;
+  };
+  if (!_addingTemplate) place('start', CX, Y0);
+  place(checkId, CX, Y0 + 120);
+  place(yesActionId, LEFT, Y0 + 280);
+  place(noActionId, RIGHT, Y0 + 280);
+  place(endYesId, LEFT, Y0 + 430);
+  place(endNoId, RIGHT, Y0 + 430);
+  Object.keys(edgeRouteCache).forEach(k => { delete edgeRouteCache[k]; });
+  Object.keys(edgeBusCache).forEach(k => { delete edgeBusCache[k]; });
+  renderNodes();
+}
+
+/** Canonical Reflection layout: start → generate → reflect → should_continue → end | generate */
+function applyReflectionLayout(generateId, reflectId, condId, endId) {
+  const CX = 300;
+  const Y0 = 36;
+  renderNodes();
+  const place = (id, cx, y) => {
+    const n = nodes[id];
+    if (!n) return;
+    const el = document.querySelector('.lg-node[data-id="' + id + '"]');
+    const w = el ? el.offsetWidth : 140;
+    n.x = Math.round(cx - w / 2);
+    n.y = y;
+  };
+  // Vertical spine: start → generate → reflect → should_continue → end
+  // loop back: should_continue → generate goes left bus
+  if (!_addingTemplate) place('start', CX, Y0);
+  place(generateId, CX, Y0 + 110);
+  place(reflectId, CX, Y0 + 240);
+  place(condId, CX, Y0 + 370);
+  place(endId, CX, Y0 + 510);
+  Object.keys(edgeRouteCache).forEach(k => { delete edgeRouteCache[k]; });
+  Object.keys(edgeBusCache).forEach(k => { delete edgeBusCache[k]; });
+  renderNodes();
+}
+
+/** Align node left edges so their centers share the same X (after DOM measure). */
+function alignColumnCenters(ids, centerX) {
+  renderNodes();
+  ids.forEach(id => {
+    const n = nodes[id];
+    if (!n) return;
+    const el = document.querySelector('.lg-node[data-id="' + id + '"]');
+    const w = el ? el.offsetWidth : 130;
+    n.x = Math.round(centerX - w / 2);
+  });
+  renderNodes();
+}
+
+function placeCentered(id, centerX, y) {
+  const n = nodes[id];
+  if (!n) return;
+  renderNodes();
+  const el = document.querySelector('.lg-node[data-id="' + id + '"]');
+  const w = el ? el.offsetWidth : 130;
+  n.x = Math.round(centerX - w / 2);
+  n.y = y;
+}
+
+function loadTemplate(key) {
+  if (!key) return;
+  const additive = graphHasContent();
+  const beforeIds = new Set(Object.keys(nodes));
+  const startPos = nodes.start ? { x: nodes.start.x, y: nodes.start.y } : null;
+  let beforeBounds = null;
+
+  _addingTemplate = additive;
+  if (!additive) {
+    clearCanvasGraph();
+    Object.keys(edgeRouteCache).forEach(k => { delete edgeRouteCache[k]; });
+    Object.keys(edgeBusCache).forEach(k => { delete edgeBusCache[k]; });
+  } else {
+    renderNodes();
+    beforeBounds = computeGraphBounds();
+  }
+
+  const CX = 360; // shared column center for vertical spines
+
+  try {
+  if (key === 'simple') {
+    setProblem('Route based on whether enough context already exists: answer directly or search first.');
+    // Layout (matches canonical simple-branch diagram):
+    //           start
+    //             |
+    //         has data?
+    //         /        \
+    // answer directly   search first
+    //        |               |
+    //       end             end
+    const check = addNode('router', 0, 0, 'has data?');
+    const a = addNode('action', 0, 0, 'answer directly'); nodes[a].effect = 'write answer from context';
+    const b = addNode('action', 0, 0, 'search first'); nodes[b].effect = 'fetch missing context';
+    const end1 = addNode('end', 0, 0, 'end');
+    const end2 = addNode('end', 0, 0, 'end');
+    link('start', check);
+    link(check, a, 'yes');
+    link(check, b, 'no');
+    link(a, end1);
+    link(b, end2);
+    applyTemplateState([{ key: 'has_data', val: 'false' }, { key: 'answer', val: '' }]);
+    applySimpleBranchLayout(check, a, b, end1, end2);
+  } else if (key === 'retry') {
+    setProblem('An agent plans a search, runs it, and retries until results are good enough or attempts are exhausted.');
+    placeStart(CX, 30);
+    const plan = addNode('action', CX, 130, 'plan'); nodes[plan].effect = 'decide what to search';
+    const tool = addNode('action', CX, 290, 'search'); nodes[tool].effect = 'attempts += 1; store results';
+    const ev = addNode('router', CX, 450, 'evaluate');
+    const end = addNode('end', CX, 600, 'end');
+    link('start', plan); link(plan, tool); link(tool, ev);
+    link(ev, end, 'enough');
+    link(ev, plan, 'retry');
+    applyTemplateState([{ key: 'attempts', val: '0' }, { key: 'enough', val: 'false' }, { key: 'results', val: '' }]);
+    alignColumnCenters(['start', plan, tool, ev, end], CX);
+  } else if (key === 'react') {
+    setProblem('ReAct agent: the model reasons, optionally calls tools, and loops until it can answer.');
+    const agent = addNode('action', 0, 0, 'agent');
+    nodes[agent].effect = 'call the model';
+    const cond = addNode('router', 0, 0, 'tools_condition');
+    nodes[cond].effect = 'is there a tool call?';
+    const tools = addNode('action', 0, 0, 'tools');
+    nodes[tools].effect = 'execute tool calls';
+    const end = addNode('end', 0, 0, 'end');
+    link('start', agent);
+    link(agent, cond);
+    link(cond, tools, 'yes');
+    link(cond, end, 'no');
+    link(tools, agent);
+    applyTemplateState([{ key: 'messages', val: '[]' }]);
+    applyReactLayout(agent, cond, tools, end);
+  } else if (key === 'reflection') {
+    setProblem('Reflection agent: generate a draft, critique it, then decide whether to refine or finish.');
+    const gen = addNode('action', 0, 0, 'generate');
+    nodes[gen].effect = 'call model; produce draft';
+    const reflect = addNode('action', 0, 0, 'reflect');
+    nodes[reflect].effect = 'critique draft; iterations++';
+    const cond = addNode('router', 0, 0, 'should_continue');
+    nodes[cond].effect = 'OK or max iter?';
+    const end = addNode('end', 0, 0, 'end');
+    link('start', gen);
+    link(gen, reflect);
+    link(reflect, cond);
+    link(cond, gen, 'generate');
+    link(cond, end, 'end');
+    applyTemplateState([
+      { key: 'messages', val: '[]' },
+      { key: 'iterations', val: '0' },
+      { key: 'max_iterations', val: '3' },
+    ]);
+    applyReflectionLayout(gen, reflect, cond, end);
+  } else if (key === 'tool_calling') {
+    setProblem('Tool-calling agent: the model either calls a tool or returns a final answer; tool results are fed back into the model.');
+    placeStart(CX, 30);
+    const llm = addNode('action', CX, 130, 'LLM'); nodes[llm].effect = 'call tool(s) or final answer';
+    const need = addNode('router', CX, 290, 'needs tool?');
+    const end = addNode('end', CX, 450, 'end');
+    const tool = addNode('action', CX + 280, 290, 'execute tool'); nodes[tool].effect = 'run tool; append ToolMessage';
+    link('start', llm); link(llm, need);
+    link(need, end, 'no');
+    link(need, tool, 'yes');
+    link(tool, llm, 'observe');
+    applyTemplateState([{ key: 'messages', val: '[]' }, { key: 'pending_tool_calls', val: '[]' }]);
+    alignColumnCenters(['start', llm, need, end], CX);
+    placeCentered(tool, CX + 280, nodes[need].y);
+  } else if (key === 'plan_execute') {
+    setProblem('Plan-and-execute: first create a multi-step plan, then execute steps one by one until the plan is complete.');
+    placeStart(CX, 30);
+    const planner = addNode('action', CX, 130, 'create plan'); nodes[planner].effect = 'write ordered steps[]';
+    const exec = addNode('action', CX, 290, 'execute step'); nodes[exec].effect = 'run step; advance index';
+    const more = addNode('router', CX, 450, 'steps left?');
+    const end = addNode('end', CX, 600, 'end');
+    link('start', planner); link(planner, exec); link(exec, more);
+    link(more, end, 'no');
+    link(more, exec, 'yes');
+    applyTemplateState([
+      { key: 'plan', val: '[]' },
+      { key: 'step_index', val: '0' },
+      { key: 'step_results', val: '[]' },
+    ]);
+    alignColumnCenters(['start', planner, exec, more, end], CX);
+  } else if (key === 'rag') {
+    setProblem('RAG pipeline: retrieve documents for a question; if context is enough, generate an answer, otherwise fall back.');
+    placeStart(CX, 30);
+    const retrieve = addNode('action', CX, 140, 'retrieve'); nodes[retrieve].effect = 'query vector store';
+    const enough = addNode('router', CX, 300, 'context enough?');
+    const gen = addNode('action', CX, 460, 'generate answer'); nodes[gen].effect = 'answer from documents';
+    const fallback = addNode('action', CX + 280, 300, 'fallback'); nodes[fallback].effect = 'clarify or not found';
+    const end = addNode('end', CX, 620, 'end');
+    link('start', retrieve);
+    link(retrieve, enough);
+    link(enough, gen, 'yes');
+    link(enough, fallback, 'no');
+    link(gen, end);
+    link(fallback, end);
+    applyTemplateState([
+      { key: 'question', val: '' },
+      { key: 'documents', val: '[]' },
+      { key: 'answer', val: '' },
+    ]);
+    alignColumnCenters(['start', retrieve, enough, gen, end], CX);
+    placeCentered(fallback, CX + 280, nodes[enough].y);
+  } else if (key === 'supervisor') {
+    setProblem('Supervisor routes each turn to a specialist worker (researcher or writer), then decides whether to continue or finish.');
+    // Layout:
+    //              start
+    //                |
+    //            supervisor
+    //           /    |     \
+    //      writer   end   researcher
+    //        \______/ \______/  (handoff back on each side)
+    const supervisor = addNode('router', 0, 0, 'supervisor');
+    const writer = addNode('action', 0, 0, 'writer'); nodes[writer].effect = 'draft response from notes';
+    const researcher = addNode('action', 0, 0, 'researcher'); nodes[researcher].effect = 'gather facts; write notes';
+    const end = addNode('end', 0, 0, 'end');
+    link('start', supervisor);
+    link(supervisor, writer, 'write');
+    link(supervisor, researcher, 'research');
+    link(supervisor, end, 'done');
+    link(writer, supervisor, 'handoff');
+    link(researcher, supervisor, 'handoff');
+    applyTemplateState([
+      { key: 'messages', val: '[]' },
+      { key: 'notes', val: '' },
+      { key: 'draft', val: '' },
+    ]);
+    applySupervisorLayout(supervisor, writer, researcher, end);
+  } else if (key === 'map_reduce') {
+    setProblem('Map-reduce style flow: split work into chunks, process each worker path, then merge into one result.');
+    placeStart(CX - 280, 220);
+    const split = addNode('action', CX, 200, 'split work'); nodes[split].effect = 'create chunks[]';
+    const w1 = addNode('action', CX + 260, 20, 'worker A'); nodes[w1].effect = 'process chunk A';
+    const w2 = addNode('action', CX + 260, 200, 'worker B'); nodes[w2].effect = 'process chunk B';
+    const w3 = addNode('action', CX + 260, 380, 'worker C'); nodes[w3].effect = 'process chunk C';
+    const merge = addNode('action', CX + 520, 200, 'merge'); nodes[merge].effect = 'combine partials';
+    const end = addNode('end', CX + 760, 200, 'end');
+    link('start', split); link(split, w1); link(split, w2); link(split, w3); link(w1, merge); link(w2, merge); link(w3, merge); link(merge, end);
+    applyTemplateState([
+      { key: 'chunks', val: '[]' },
+      { key: 'partials', val: '[]' },
+      { key: 'result', val: '' },
+    ]);
+    placeCentered('start', CX - 260, 220);
+    placeCentered(split, CX, 200);
+    placeCentered(w1, CX + 260, 20);
+    placeCentered(w2, CX + 260, 200);
+    placeCentered(w3, CX + 260, 380);
+    placeCentered(merge, CX + 520, 200);
+    placeCentered(end, CX + 760, 200);
+  } else if (key === 'hitl') {
+    setProblem('Human-in-the-loop: the agent drafts an action, a human approves or rejects it, then continue or revise.');
+    placeStart(CX, 30);
+    const draft = addNode('action', CX, 130, 'draft action'); nodes[draft].effect = 'propose next action / reply';
+    const approve = addNode('router', CX, 300, 'human approve?');
+    const apply = addNode('action', CX + 280, 180, 'apply / send'); nodes[apply].effect = 'execute approved action';
+    const revise = addNode('action', CX + 280, 420, 'revise'); nodes[revise].effect = 'update draft from feedback';
+    const end = addNode('end', CX + 520, 180, 'end');
+    link('start', draft); link(draft, approve); link(approve, apply, 'yes'); link(approve, revise, 'no'); link(revise, draft); link(apply, end);
+    applyTemplateState([
+      { key: 'draft', val: '' },
+      { key: 'human_feedback', val: '' },
+      { key: 'approved', val: 'false' },
+    ]);
+    alignColumnCenters(['start', draft, approve], CX);
+    placeCentered(apply, CX + 280, 180);
+    placeCentered(revise, CX + 280, 420);
+    placeCentered(end, CX + 520, 180);
+  } else if (key === 'guardrails') {
+    setProblem('Guardrails: validate the user input, run the agent, then check the output before returning it.');
+    placeStart(CX - 280, 200);
+    const inCheck = addNode('router', CX, 200, 'input safe?');
+    const refuse = addNode('action', CX, 420, 'refuse'); nodes[refuse].effect = 'block unsafe input';
+    const agent = addNode('action', CX + 280, 60, 'agent'); nodes[agent].effect = 'generate candidate answer';
+    const outCheck = addNode('router', CX + 280, 240, 'output ok?');
+    const rewrite = addNode('action', CX + 280, 440, 'rewrite output'); nodes[rewrite].effect = 'fix policy issues';
+    const endOk = addNode('end', CX + 560, 60, 'end');
+    const endNo = addNode('end', CX + 560, 420, 'end');
+    link('start', inCheck);
+    link(inCheck, agent, 'yes');
+    link(inCheck, refuse, 'no');
+    link(refuse, endNo);
+    link(agent, outCheck);
+    link(outCheck, endOk, 'yes');
+    link(outCheck, rewrite, 'no');
+    link(rewrite, outCheck);
+    applyTemplateState([
+      { key: 'user_input', val: '' },
+      { key: 'candidate', val: '' },
+      { key: 'final_answer', val: '' },
+    ]);
+    placeCentered('start', CX - 260, 200);
+    alignColumnCenters([inCheck, refuse], CX);
+    placeCentered(inCheck, CX, 200);
+    placeCentered(refuse, CX, 420);
+    alignColumnCenters([agent, outCheck, rewrite], CX + 280);
+    placeCentered(agent, CX + 280, 60);
+    placeCentered(outCheck, CX + 280, 240);
+    placeCentered(rewrite, CX + 280, 440);
+    placeCentered(endOk, CX + 560, 60);
+    placeCentered(endNo, CX + 560, 420);
+  } else {
+    return;
+  }
+  } finally {
+    if (additive && beforeBounds) {
+      layoutAddedTemplate(beforeIds, beforeBounds, startPos);
+    }
+    _addingTemplate = false;
+  }
+
   resetRun();
   renderState();
   renderNodes();
+  // Only re-center when loading into an empty canvas; additive keeps your view/layout.
+  if (!additive) centerGraphInView();
+  else {
+    selected.clear();
+    Object.keys(nodes).forEach(id => {
+      if (id !== 'start' && !beforeIds.has(id)) selected.add(id);
+    });
+    renderNodes();
+  }
 }
+
+/** Pin the graph near the top-left of the canvas (avoids a tiny cluster floating mid-monitor). */
+function centerGraphInView() {
+  const ids = Object.keys(nodes);
+  if (!ids.length) return;
+  renderNodes();
+  let minX = Infinity, minY = Infinity;
+  ids.forEach(id => {
+    const r = nodeRect(id);
+    minX = Math.min(minX, r.x);
+    minY = Math.min(minY, r.y);
+  });
+  // Keep EDGE_BUS free on the left for lateral return edges.
+  const dx = Math.round(CANVAS_PAD + EDGE_BUS - minX);
+  const dy = Math.round(CANVAS_PAD - minY);
+  if (dx === 0 && dy === 0) {
+    ensureCanvasFitsContent({ noShift: true });
+    const outer = document.getElementById('canvas-outer');
+    if (outer) { outer.scrollLeft = 0; outer.scrollTop = 0; }
+    return;
+  }
+  ids.forEach(id => {
+    nodes[id].x += dx;
+    nodes[id].y += dy;
+  });
+  Object.keys(edgeRouteCache).forEach(k => delete edgeRouteCache[k]);
+  Object.keys(edgeBusCache).forEach(k => delete edgeBusCache[k]);
+  renderNodes();
+  const outer = document.getElementById('canvas-outer');
+  if (outer) { outer.scrollLeft = 0; outer.scrollTop = 0; }
+}
+
+document.addEventListener('click', (ev) => {
+  const open = document.querySelector('.lg-menu.open');
+  if (!open) return;
+  if (!open.contains(ev.target)) closeMenus();
+});
+
+// Back-compat alias if anything still calls loadExample
+function loadExample(key) { loadTemplate(key); }
 
 function serializeGraph() {
   return {
@@ -1258,8 +2723,208 @@ function pyName(label, fallback) {
   return s || fallback;
 }
 
-function generateCode() {
-  ensureStartNode();
+function findNodeByLabel(type, label) {
+  const want = String(label || '').trim().toLowerCase();
+  return Object.values(nodes).find(n => n.type === type && String(n.label || '').trim().toLowerCase() === want) || null;
+}
+
+/** Detect the canonical ReAct teaching graph (agent + tools_condition + tools). */
+function isReactStyleGraph() {
+  const agent = findNodeByLabel('action', 'agent');
+  const tools = findNodeByLabel('action', 'tools');
+  const cond = findNodeByLabel('router', 'tools_condition');
+  if (!agent || !tools || !cond) return false;
+  const has = (from, to) => edges.some(e => e.from === from && e.to === to);
+  const condToTools = edges.some(e => e.from === cond.id && e.to === tools.id);
+  const condToEnd = edges.some(e => e.from === cond.id && nodes[e.to] && nodes[e.to].type === 'end');
+  const toolsToAgent = has(tools.id, agent.id);
+  const agentToCond = has(agent.id, cond.id);
+  return agentToCond && condToTools && condToEnd && toolsToAgent;
+}
+
+/** Detect the canonical Reflection teaching graph (generate + should_continue + reflect). */
+function isReflectionStyleGraph() {
+  const gen = findNodeByLabel('action', 'generate');
+  const reflect = findNodeByLabel('action', 'reflect');
+  const cond = findNodeByLabel('router', 'should_continue');
+  if (!gen || !reflect || !cond) return false;
+  const has = (from, to) => edges.some(e => e.from === from && e.to === to);
+  // Correct flow: generate → reflect → should_continue → (generate | end)
+  const genToReflect = has(gen.id, reflect.id);
+  const reflectToCond = has(reflect.id, cond.id);
+  const condToGen = edges.some(e => e.from === cond.id && e.to === gen.id);
+  const condToEnd = edges.some(e => e.from === cond.id && nodes[e.to] && nodes[e.to].type === 'end');
+  return genToReflect && reflectToCond && condToGen && condToEnd;
+}
+
+function generateReactCode() {
+  return [
+    '# react.py',
+    'from langchain.chat_models import init_chat_model',
+    'from langchain_core.tools import tool',
+    '',
+    '',
+    '@tool',
+    'def get_weather(city: str) -> str:',
+    '    """Get the weather for a city."""',
+    '    return f"The weather in {city} is sunny, 22°C."',
+    '',
+    '',
+    'tools = [get_weather]',
+    '',
+    'llm = init_chat_model("claude-sonnet-4-5", model_provider="anthropic").bind_tools(tools)',
+    '',
+    '',
+    '# main.py',
+    'from dotenv import load_dotenv',
+    'from langchain_core.messages import SystemMessage',
+    'from langgraph.graph import MessagesState, StateGraph, END',
+    'from langgraph.prebuilt import ToolNode, tools_condition',
+    '',
+    'from react import llm, tools',
+    '',
+    'load_dotenv()',
+    '',
+    'SYSTEM_MESSAGE = """',
+    'You are a helpful assistant that can use tools to answer questions.',
+    '"""',
+    '',
+    '',
+    'def run_agent_reasoning(state: MessagesState) -> dict:',
+    '    """',
+    '    Run the agent reasoning node.',
+    '    """',
+    '    response = llm.invoke([SystemMessage(content=SYSTEM_MESSAGE), *state["messages"]])',
+    '    return {"messages": [response]}',
+    '',
+    '',
+    'tool_node = ToolNode(tools)',
+    '',
+    'graph = StateGraph(MessagesState)',
+    'graph.add_node("agent", run_agent_reasoning)',
+    'graph.add_node("tools", tool_node)',
+    '',
+    'graph.set_entry_point("agent")',
+    'graph.add_conditional_edges("agent", tools_condition)',
+    'graph.add_edge("tools", "agent")',
+    '',
+    'app = graph.compile()',
+    '',
+    'if __name__ == "__main__":',
+    '    response = app.invoke(',
+    '        {"messages": [{"role": "user", "content": "What\'s the weather like in Buenos Aires?"}]}',
+    '    )',
+    '    print(response["messages"][-1].content)',
+    '',
+  ].join('\n');
+}
+
+function generateReflectionCode() {
+  return [
+    '# chains.py',
+    'from langchain.chat_models import init_chat_model',
+    'from langchain_core.prompts import ChatPromptTemplate',
+    '',
+    'llm = init_chat_model("claude-sonnet-4-5", model_provider="anthropic")',
+    '',
+    'generate_prompt = ChatPromptTemplate.from_messages([',
+    '    ("system", "You improve drafts. Return only the improved text."),',
+    '    ("placeholder", "{messages}"),',
+    '])',
+    'reflect_prompt = ChatPromptTemplate.from_messages([',
+    '    ("system",',
+    '     "Critique the latest draft. If it is good enough, start your reply with OK. "',
+    '     "Otherwise give concrete revision notes."),',
+    '    ("placeholder", "{messages}"),',
+    '])',
+    '',
+    'generate_chain = generate_prompt | llm',
+    'reflect_chain = reflect_prompt | llm',
+    '',
+    '',
+    '# main.py',
+    'from typing import TypedDict, Annotated',
+    'import time',
+    'from dotenv import load_dotenv',
+    '',
+    'load_dotenv()',
+    '',
+    'from langchain_core.messages import BaseMessage, HumanMessage',
+    'from langgraph.graph import END, StateGraph, START',
+    'from langgraph.graph.message import add_messages',
+    'from chains import generate_chain, reflect_chain',
+    '',
+    '',
+    'class AgentState(TypedDict):',
+    '    messages: Annotated[list[BaseMessage], add_messages]',
+    '    iterations: int',
+    '    max_iterations: int',
+    '',
+    '',
+    'REFLECT = "reflect"',
+    'GENERATE = "generate"',
+    '',
+    '',
+    'def generation_node(state: AgentState) -> dict:',
+    '    start = time.perf_counter()',
+    '    response = generate_chain.invoke({"messages": state["messages"]})',
+    '    print(f"[generate] iter={state[\'iterations\']} took={time.perf_counter()-start:.2f}s")',
+    '    return {"messages": [response]}',
+    '',
+    '',
+    'def reflection_node(state: AgentState) -> dict:',
+    '    start = time.perf_counter()',
+    '    res = reflect_chain.invoke({"messages": state["messages"]})',
+    '    print(',
+    '        f"[reflect] iter={state[\'iterations\']} took={time.perf_counter()-start:.2f}s "',
+    '        f"critique={res.content[:80]!r}"',
+    '    )',
+    '    return {"messages": [HumanMessage(content=res.content)], "iterations": state["iterations"] + 1}',
+    '',
+    '',
+    'def should_continue(state: AgentState) -> str:',
+    '    # Called after reflect — last message is the critique.',
+    '    last_critique = state["messages"][-1].content',
+    '    if last_critique.upper().lstrip().startswith("OK"):',
+    '        return END',
+    '    if state["iterations"] >= state["max_iterations"]:',
+    '        return END',
+    '    return GENERATE',
+    '',
+    '',
+    'builder = StateGraph(state_schema=AgentState)',
+    'builder.add_node(GENERATE, generation_node)',
+    'builder.add_node(REFLECT, reflection_node)',
+    'builder.add_edge(START, GENERATE)',
+    'builder.add_edge(GENERATE, REFLECT)',
+    'builder.add_conditional_edges(REFLECT, should_continue, {GENERATE: GENERATE, END: END})',
+    'graph = builder.compile()',
+    '',
+    'if __name__ == "__main__":',
+    '    inputs = {',
+    '        "messages": [',
+    '            HumanMessage(content="Make this tweet better: ...")',
+    '        ],',
+    '        "iterations": 0,',
+    '        "max_iterations": 3,',
+    '    }',
+    '    response = graph.invoke(inputs)',
+    '',
+    '    print(f"\\nTotal messages: {len(response[\'messages\'])}")',
+    '    print(f"Reflection iterations: {response[\'iterations\']}")',
+    '    for i, m in enumerate(response["messages"]):',
+    '        print(f"{i}: {type(m).__name__} — {m.content[:60]}")',
+    '',
+  ].join('\n');
+}
+
+function detectCodePattern() {
+  if (isReactStyleGraph()) return 'react';
+  if (isReflectionStyleGraph()) return 'reflection';
+  return 'generic';
+}
+
+function buildLocalSkeletonCode() {
   const nameOf = {};
   Object.values(nodes).forEach(n => {
     if (n.type === 'start') nameOf[n.id] = 'START';
@@ -1268,7 +2933,6 @@ function generateCode() {
   });
   const routerIds = new Set(Object.values(nodes).filter(n => n.type === 'router').map(n => n.id));
 
-  // Give each router's branch labels safe python string keys, unique per router
   function branchKey(edge, idx) {
     const raw = (edge.label || '').trim();
     return raw || ('branch_' + (idx + 1));
@@ -1282,7 +2946,6 @@ function generateCode() {
   else code += '    pass\n';
   code += '\n\n';
 
-  // Action node functions
   Object.values(nodes).forEach(n => {
     if (n.type !== 'action') return;
     code += 'def ' + nameOf[n.id] + '(state: State) -> dict:\n';
@@ -1290,7 +2953,6 @@ function generateCode() {
     code += '    return {}\n\n\n';
   });
 
-  // Routing functions: one per router, returns a branch label
   Object.values(nodes).forEach(n => {
     if (n.type !== 'router') return;
     const outs = edges.filter(e => e.from === n.id);
@@ -1312,8 +2974,6 @@ function generateCode() {
   });
   code += '\n';
 
-  // Plain edges: skip any edge whose target is a router (handled via conditional edges),
-  // and skip edges leaving a router (those are encoded in the conditional mapping).
   edges.forEach(e => {
     const from = nodes[e.from], to = nodes[e.to];
     if (!from || !to) return;
@@ -1323,8 +2983,6 @@ function generateCode() {
     code += 'builder.add_edge(' + fromRef + ', ' + toRef + ')\n';
   });
 
-  // Conditional edges: for each router, every predecessor node gets a conditional edge
-  // using the router's routing function and a label->target mapping.
   Object.values(nodes).forEach(n => {
     if (n.type !== 'router') return;
     const outs = edges.filter(e => e.from === n.id);
@@ -1345,18 +3003,177 @@ function generateCode() {
     });
   });
   code += '\ngraph = builder.compile()\n';
+  return code;
+}
 
-  showResults('<div style="font-weight:500; margin-bottom:6px;">generated LangGraph code</div>' +
-    '<textarea readonly style="width:100%; min-height:220px; font-family:monospace; font-size:11px; border:1px solid var(--line-strong); border-radius:6px; padding:8px; background:var(--paper);">' + escapeHtml(code) + '</textarea>' +
-    '<button class="lg-btn" style="width:100%; margin-top:6px;" onclick="copyText(this, `' + code.replace(/`/g, '\\`').replace(/\$/g, '\\$') + '`)">copy code</button>' +
-    '<div style="font-size:11px; color:var(--ink-soft); margin-top:6px;">This is a skeleton: fill in the conditions (...) and each node effects.</div>');
+function buildLocalCode(pattern) {
+  if (pattern === 'react') return generateReactCode();
+  if (pattern === 'reflection') return generateReflectionCode();
+  return buildLocalSkeletonCode();
+}
+
+function showGeneratedCode(code, meta) {
+  const title = meta.title || 'generated LangGraph code';
+  const note = meta.note || '';
+  const source = meta.source === 'mcp'
+    ? '<span style="color:#2F6B3A;">live docs (LangChain MCP)</span>'
+    : '<span style="color:#BA7517;">local fallback</span>';
+  showResults(
+    '<div style="font-weight:500; margin-bottom:6px;">' + escapeHtml(title) +
+      ' · ' + source + '</div>' +
+    '<textarea readonly style="width:100%; min-height:280px; font-family:monospace; font-size:11px; border:1px solid var(--line-strong); border-radius:6px; padding:8px; background:var(--paper);">' +
+      escapeHtml(code) + '</textarea>' +
+    '<button type="button" class="lg-btn" style="width:100%; margin-top:6px;" onclick="copyAdjacentTextarea(this)">copy code</button>' +
+    (note ? '<div style="font-size:11px; color:var(--ink-soft); margin-top:6px;">' + note + '</div>' : '')
+  );
+}
+
+async function generateCode() {
+  ensureStartNode();
+  const pattern = detectCodePattern();
+  const localCode = buildLocalCode(pattern);
+  const titles = {
+    react: 'generated LangGraph code (ReAct)',
+    reflection: 'generated LangGraph code (Reflection)',
+    generic: 'generated LangGraph code',
+  };
+  const notes = {
+    react: 'Built from your graph using live LangChain docs (MCP).',
+    reflection: 'Built from your graph using live LangChain docs (MCP).',
+    generic: 'Built from your graph. Live generation uses LangChain docs MCP when available.',
+  };
+
+  if (typeof getIdTokenForApi !== 'function') {
+    showGeneratedCode(localCode, {
+      title: titles[pattern],
+      note: notes[pattern] + ' Sign in for live docs-backed generation.',
+      source: 'local',
+    });
+    return;
+  }
+
+  let idToken;
+  try {
+    idToken = await getIdTokenForApi();
+  } catch (_) {
+    showGeneratedCode(localCode, {
+      title: titles[pattern],
+      note: notes[pattern] + ' Sign in for live docs-backed generation.',
+      source: 'local',
+    });
+    return;
+  }
+
+  showResults('<div style="color:var(--ink-soft);">generating code from live LangChain docs…</div>');
+
+  try {
+    const response = await fetch('/api/generate-code', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + idToken,
+      },
+      body: JSON.stringify({
+        pattern,
+        graph: serializeGraph(),
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (response.status === 401) {
+      showGeneratedCode(localCode, {
+        title: titles[pattern],
+        note: escapeHtml(data.error || 'Sign in required.') + ' Showing local fallback.',
+        source: 'local',
+      });
+      return;
+    }
+    if (response.status === 429) {
+      const usageNote = data.plan
+        ? ' (' + escapeHtml(String(data.used || '')) + '/' + escapeHtml(String(data.limit || '')) + ' on ' + escapeHtml(String(data.plan)) + ')'
+        : '';
+      showGeneratedCode(localCode, {
+        title: titles[pattern],
+        note: escapeHtml(data.error || 'Rate limit reached.') + usageNote + ' Showing local fallback.',
+        source: 'local',
+      });
+      return;
+    }
+    if (!response.ok || !data.code) {
+      showGeneratedCode(localCode, {
+        title: titles[pattern],
+        note: escapeHtml(data.error || 'Live generation failed.') +
+          (data.detail ? ' (' + escapeHtml(String(data.detail).slice(0, 160)) + ')' : '') +
+          ' Showing local fallback.',
+        source: 'local',
+      });
+      return;
+    }
+
+    if (data.usage && data.usage.plan) {
+      const planEl = document.getElementById('user-plan');
+      if (planEl) {
+        planEl.textContent = data.usage.plan + (typeof data.usage.remaining === 'number'
+          ? ' · ' + data.usage.remaining + ' left today'
+          : '');
+      }
+    }
+
+    showGeneratedCode(data.code, {
+      title: titles[pattern],
+      note: 'Generated with LangChain docs + API reference MCP so imports stay current.',
+      source: 'mcp',
+    });
+  } catch (err) {
+    showGeneratedCode(localCode, {
+      title: titles[pattern],
+      note: 'Could not reach live codegen (' + escapeHtml(String(err.message || err)) + '). Showing local fallback.',
+      source: 'local',
+    });
+  }
+}
+
+function copyAdjacentTextarea(btn) {
+  const ta = btn.previousElementSibling;
+  if (!ta || ta.tagName !== 'TEXTAREA') {
+    btn.textContent = 'copy manually from the box';
+    return;
+  }
+  copyText(btn, ta.value);
 }
 
 function copyText(btn, text) {
-  navigator.clipboard.writeText(text).then(() => {
-    const old = btn.textContent; btn.textContent = 'copied ✓';
-    setTimeout(() => btn.textContent = old, 1500);
-  }).catch(() => { btn.textContent = 'copy manually from the box'; });
+  const value = String(text || '');
+  const done = (ok) => {
+    const old = btn.dataset.label || btn.textContent;
+    btn.dataset.label = old;
+    btn.textContent = ok ? 'copied ✓' : 'copy manually from the box';
+    if (ok) setTimeout(() => { btn.textContent = btn.dataset.label || 'copy'; }, 1500);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(value).then(() => done(true)).catch(() => {
+      done(fallbackCopy(value));
+    });
+    return;
+  }
+  done(fallbackCopy(value));
+}
+
+function fallbackCopy(text) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch (_) {
+    return false;
+  }
 }
 
 function buildAnalysisPrompt() {
@@ -1383,11 +3200,37 @@ async function analyzeDesign() {
     return;
   }
   if (!BACKEND_URL) { showPromptFallback(); return; }
+
+  const guest = typeof isLangCanvasGuest === 'function' && isLangCanvasGuest();
+  let idToken = null;
+  if (!guest) {
+    if (typeof getIdTokenForApi !== 'function') {
+      showResults('<div style="color:#BA7517;">sign in or use Try for free to analyze with AI.</div>');
+      return;
+    }
+    try {
+      idToken = await getIdTokenForApi();
+    } catch (_) {
+      showResults('<div style="color:#BA7517;">sign in or use Try for free to analyze with AI.</div>');
+      return;
+    }
+  }
+
   showResults('<div style="color:var(--ink-soft);">analyzing the design…</div>');
+  const critiqueBody = document.getElementById('critique-body');
+  const critiquePanel = document.getElementById('critique-panel');
+  critiqueBody.innerHTML = '<p class="lg-critique-lead">Analyzing the design…</p>';
+  critiquePanel.hidden = false;
   try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (idToken) headers.Authorization = 'Bearer ' + idToken;
+    if (guest && typeof getGuestIdForApi === 'function') {
+      const gid = getGuestIdForApi();
+      if (gid) headers['X-LangCanvas-Guest-Id'] = gid;
+    }
     const response = await fetch(BACKEND_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         prompt: buildAnalysisPrompt(),
         metadata: {
@@ -1397,25 +3240,129 @@ async function analyzeDesign() {
       }),
     });
     const data = await response.json().catch(() => ({}));
-    if (response.status === 429) {
-      showResults('<div style="color:#BA7517;">' + escapeHtml(data.error || 'Rate limit reached. Please wait and try again.') + '</div>');
+    if (response.status === 401) {
+      closeCritique();
+      showResults('<div style="color:#BA7517;">' + escapeHtml(data.error || 'Sign in required.') + '</div>');
       return;
     }
-    if (!response.ok) throw new Error(data.error || ('backend responded ' + response.status));
-    if (data.error) throw new Error(data.error);
-    showResults('<div style="font-weight:500; margin-bottom:6px;">design critique (AI)</div><div style="white-space:pre-wrap;">' + escapeHtml(data.text || '(no response)') + '</div>');
+    if (response.status === 429) {
+      closeCritique();
+      if (guest) {
+        const used = Number(data.used);
+        const limit = Number(data.limit) || GUEST_LIMIT_UI;
+        setGuestRemaining(Number.isFinite(used) ? Math.max(0, limit - used) : 0);
+        updateGuestPlanLabel();
+      }
+      const usageNote = data.plan
+        ? ' (' + escapeHtml(String(data.used || '')) + '/' + escapeHtml(String(data.limit || '')) + ' on ' + escapeHtml(String(data.plan)) + ')'
+        : '';
+      showResults('<div style="color:#BA7517;">' + escapeHtml(data.error || 'Rate limit reached. Please wait and try again.') + usageNote + '</div>');
+      return;
+    }
+    if (!response.ok) {
+      const detail = data.detail ? (' — ' + data.detail) : '';
+      throw new Error((data.error || ('backend responded ' + response.status)) + detail);
+    }
+    if (data.error) throw new Error(data.error + (data.detail ? (' — ' + data.detail) : ''));
+    if (data.usage && data.usage.plan) {
+      const planEl = document.getElementById('user-plan');
+      if (planEl) {
+        if (data.usage.plan === 'guest') {
+          if (typeof data.usage.remaining === 'number') setGuestRemaining(data.usage.remaining);
+          updateGuestPlanLabel();
+        } else {
+          planEl.textContent = data.usage.plan + (typeof data.usage.remaining === 'number'
+            ? ' · ' + data.usage.remaining + ' left'
+            : '');
+        }
+      }
+    }
+    showResults('<div style="color:var(--ink-soft);">critique ready — see panel on the canvas.</div>');
+    showCritique(data.text || '(no response)');
   } catch (err) {
+    closeCritique();
     showResults('<div style="color:#C0392B; margin-bottom:6px;">could not reach the backend (' + escapeHtml(String(err.message || err)) + ').</div>');
     showPromptFallback(true);
   }
 }
+
+function openFeedback() {
+  const overlay = document.getElementById('feedback-overlay');
+  if (!overlay) return;
+  const status = document.getElementById('feedback-status');
+  if (status) {
+    status.textContent = '';
+    status.className = 'lg-feedback-status';
+  }
+  const btn = document.getElementById('feedback-send-btn');
+  if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
+  overlay.hidden = false;
+  const body = document.getElementById('feedback-body');
+  if (body && !body.value.trim()) body.focus();
+}
+
+function closeFeedback() {
+  const overlay = document.getElementById('feedback-overlay');
+  if (overlay) overlay.hidden = true;
+}
+
+function setFeedbackStatus(msg, kind) {
+  const status = document.getElementById('feedback-status');
+  if (!status) return;
+  status.textContent = msg || '';
+  status.className = 'lg-feedback-status' + (kind ? ' is-' + kind : '');
+}
+
+async function sendFeedbackEmail() {
+  const subject = (document.getElementById('feedback-subject')?.value || 'LangCanvas feedback').trim();
+  const message = (document.getElementById('feedback-body')?.value || '').trim();
+  if (!message) {
+    setFeedbackStatus('Please write a message.', 'error');
+    return;
+  }
+  const btn = document.getElementById('feedback-send-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  setFeedbackStatus('Sending…');
+
+  const payload = {
+    subject,
+    message,
+    plan: (document.getElementById('user-plan')?.textContent || '').slice(0, 40),
+  };
+  if (typeof isLangCanvasGuest === 'function' && isLangCanvasGuest() && typeof getGuestIdForApi === 'function') {
+    payload.guestId = getGuestIdForApi() || '';
+  }
+
+  try {
+    const response = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error || ('Could not send (' + response.status + ')'));
+    }
+    setFeedbackStatus('Thanks — feedback sent.', 'ok');
+    const bodyEl = document.getElementById('feedback-body');
+    if (bodyEl) bodyEl.value = '';
+    setTimeout(() => closeFeedback(), 900);
+  } catch (err) {
+    setFeedbackStatus(String(err.message || err), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
+  }
+}
+
+document.getElementById('feedback-overlay')?.addEventListener('click', (ev) => {
+  if (ev.target && ev.target.id === 'feedback-overlay') closeFeedback();
+});
 
 function showPromptFallback(append) {
   const prompt = buildAnalysisPrompt();
   const html = '<div style="font-weight:500; margin-bottom:6px;">manual analysis</div>' +
     '<div style="font-size:12px; margin-bottom:6px;">Copy this prompt and paste it into any chat with a model (ChatGPT, Claude, Gemini):</div>' +
     '<textarea readonly style="width:100%; min-height:180px; font-family:monospace; font-size:11px; border:1px solid var(--line-strong); border-radius:6px; padding:8px; background:var(--paper);">' + escapeHtml(prompt) + '</textarea>' +
-    '<button class="lg-btn" style="width:100%; margin-top:6px;" onclick="copyText(this, `' + prompt.replace(/`/g, '\\`').replace(/\$/g, '\\$') + '`)">copy prompt</button>';
+    '<button type="button" class="lg-btn" style="width:100%; margin-top:6px;" onclick="copyAdjacentTextarea(this)">copy prompt</button>';
   if (append) {
     document.getElementById('results-content').innerHTML += '<div style="margin-top:10px;">' + html + '</div>';
   } else {
@@ -1432,6 +3379,23 @@ buildMarkerDefs();
 ensureStartNode();
 addStateRow('attempts', '0');
 renderNodes();
+
+const canvasEl = document.getElementById('canvas');
+if (canvasEl) canvasEl.addEventListener('mousedown', onCanvasMouseDown);
+const canvasOuterEl = document.getElementById('canvas-outer');
+if (canvasOuterEl) canvasOuterEl.addEventListener('mousedown', (ev) => {
+  // Allow marquee when clicking empty padded area of the outer scroller
+  if (ev.target === canvasOuterEl) onCanvasMouseDown(ev);
+});
+
+let _canvasResizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(_canvasResizeTimer);
+  _canvasResizeTimer = setTimeout(() => {
+    ensureCanvasFitsContent({ noShift: true });
+    renderEdges();
+  }, 120);
+});
 </script>
 </body>
 </html>

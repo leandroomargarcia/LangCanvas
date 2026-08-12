@@ -1,10 +1,12 @@
 {
   "name": "langcanvas",
   "version": "1.0.0",
-  "description": "Visual LangGraph simulator with Gemini design analysis",
+  "description": "LangCanvas — visual LangGraph simulator with Gemini design analysis",
   "private": true,
   "type": "module",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "firebase-admin": "^13.4.0",
     "langsmith": "^0.3.74"
   }
 }

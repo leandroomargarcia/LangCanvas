@@ -1,7 +1,0 @@
-{
-  "name": "langgraph-practice-backend",
-  "version": "1.0.0",
-  "description": "Backend mínimo para el análisis de diseño con IA (Gemini) del simulador LangGraph",
-  "type": "module",
-  "private": true
-}

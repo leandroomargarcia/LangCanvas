@@ -1,62 +1,87 @@
 # LangCanvas
 
-Visual simulator to practice designing LangGraph-style state graphs, with optional AI design critique powered by Gemini.
+Visual simulator to practice designing LangGraph-style state graphs, with AI design critique (Gemini), code generation (LangChain MCP), and freemium access.
 
-## What’s included
+Brand: **LangCanvas** · Site: [langcanvas.dev](https://langcanvas.dev)
 
-- `index.html` / `langcanvas.html` — frontend canvas simulator
-- `api/analyze.js` — Vercel serverless function (`POST /api/analyze`) that calls Gemini
-- Free-tier friendly model: `gemini-flash-lite-latest`
-- Aggressive public rate limits on the analyze endpoint
-- Optional [LangSmith](https://smith.langchain.com) tracing for each analyze call
+## Project layout
 
-## Local frontend
-
-```bash
-python -m http.server 8765
-# http://localhost:8765
+```
+api/                     # Vercel serverless functions
+  analyze.js             # POST /api/analyze — AI design critique
+  generate-code.js       # POST /api/generate-code — LangGraph Python via MCP
+  feedback.js            # POST /api/feedback — email via Resend
+index.html               # Frontend (canvas + auth gate)
+firebase-config.example.js
+firestore.rules
+scripts/                 # Optional local diagnostics
+vercel.json
 ```
 
-Without a backend, **Analyze design (AI)** falls back to a copyable prompt.
+## Features
 
-## Deploy on Vercel (frontend + API)
+- Visual LangGraph-style canvas (templates, multi-select, export)
+- Step-through execution + structural validate
+- **Try for free**: 5 AI critiques per guest (browser id + IP)
+- Google sign-in for member / Pro path
+- Generate code with live LangChain docs (MCP) + local fallback
+- Feedback form → Resend email
 
-1. Set env var `GEMINI_API_KEY` (from https://aistudio.google.com/apikey)
-2. (Optional) Enable LangSmith — see below
-3. Deploy this repo (root directory)
-4. The app uses same-origin `BACKEND_URL = '/api/analyze'`
+## Quotas
+
+| Plan | Analyze AI |
+|------|------------|
+| `guest` (Try for free) | 5 lifetime / guest+IP |
+| `free` (signed in) | 5 / day |
+| `pro` | 50 / day |
+
+## Firebase setup
+
+1. Create a project at [Firebase Console](https://console.firebase.google.com).
+2. **Authentication** → enable **Google**.
+3. Copy web config into `firebase-config.js` (from `firebase-config.example.js`).
+4. Authorized domains: `langcanvas.dev`, `*.vercel.app`, `localhost`.
+5. Firestore → paste [`firestore.rules`](firestore.rules) → Publish.
+6. Service account → set on Vercel / `.env`:
+   - `FIREBASE_PROJECT_ID`
+   - `FIREBASE_CLIENT_EMAIL`
+   - `FIREBASE_PRIVATE_KEY`
+
+Also set `GEMINI_API_KEY`. Optional: LangSmith, Resend.
+
+## Environment variables
+
+See [`.env.example`](.env.example). Important extras:
+
+| Var | Purpose |
+|-----|---------|
+| `RESEND_API_KEY` | Feedback emails |
+| `FEEDBACK_TO` | Inbox for feedback |
+| `RESEND_FROM` | Verified sender (or Resend onboarding address) |
+
+## Deploy (Vercel)
 
 ```bash
-npx vercel env add GEMINI_API_KEY
+cp firebase-config.example.js firebase-config.js   # fill values
+cp .env.example .env                                 # fill secrets
+npx vercel env add …                                 # production secrets
 npx vercel --prod
 ```
 
-## LangSmith tracing (optional)
+App uses same-origin APIs (`/api/analyze`, `/api/generate-code`, `/api/feedback`).
 
-When `LANGSMITH_API_KEY` is set, each successful `/api/analyze` call is traced as `langcanvas-analyze` with:
-
-- anonymized visitor hash (not raw IP)
-- problem description
-- node/edge counts, node types
-- compact graph snapshot (labels, edges, state vars)
-
-Without the key, the API works as before (no tracing).
-
-Env vars:
+### Local
 
 ```bash
-LANGSMITH_API_KEY=lsv2_pt_...   # https://smith.langchain.com → Settings → API Keys
-LANGSMITH_TRACING=true
-LANGSMITH_PROJECT=langcanvas
-# optional:
-IP_HASH_SALT=any-random-string
-```
-
-Free Developer plan is enough for a public demo (~5k traces/month).
-
-## Local API (`vercel dev`)
-
-```bash
-cp .env.example .env   # put your GEMINI_API_KEY (+ optional LangSmith vars)
 npx vercel dev
 ```
+
+## LangSmith (optional)
+
+```bash
+LANGSMITH_API_KEY=lsv2_pt_...
+LANGSMITH_TRACING=true
+LANGSMITH_PROJECT=langcanvas
+```
+
+Built by [Leandro Garcia](https://www.linkedin.com/in/leandroomargarcia/).

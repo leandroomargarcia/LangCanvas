@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users may read/create/update only their own profile (plan is server-owned after create).
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.plan == 'free'
+        && request.resource.data.email == request.auth.token.email;
+      allow update: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.plan == resource.data.plan
+        && request.resource.data.email == resource.data.email;
+      allow delete: if false;
+    }
+
+    // Usage counters are written only by the Admin SDK (API). Clients cannot touch them.
+    match /usage/{docId} {
+      allow read: if request.auth != null
+        && resource.data.uid == request.auth.uid;
+      allow write: if false;
+    }
+
+    // Guest trial counters (IP / guest-id). Admin SDK only.
+    match /guest_usage/{docId} {
+      allow read, write: if false;
+    }
+  }
+}
