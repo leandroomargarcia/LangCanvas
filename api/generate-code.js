@@ -205,6 +205,10 @@ function buildSearchPlan(pattern, graph) {
     docsQueries.push('LangGraph reflection agent generate critique loop Python');
     apiQueries.push('StateGraph add_conditional_edges END');
     apiQueries.push('add_messages Annotated MessagesState');
+  } else if (pattern === 'reflexion') {
+    docsQueries.push('LangGraph Reflexion agent draft tools revise loop Python');
+    apiQueries.push('ToolNode add_conditional_edges StateGraph');
+    apiQueries.push('add_messages MessagesState bind_tools');
   } else {
     docsQueries.push(`LangGraph StateGraph Python ${labels}`.slice(0, 120));
     apiQueries.push('StateGraph add_node add_edge add_conditional_edges compile');
