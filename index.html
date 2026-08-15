@@ -83,8 +83,9 @@
     flex: 1; min-height: 0;
   }
   .lg-side {
-    width: 230px; flex-shrink: 0;
+    width: 248px; flex-shrink: 0;
     display: flex; flex-direction: column; gap: 10px;
+    max-height: 100%; overflow-y: auto;
   }
   .lg-panel {
     background: var(--card); border: 1px solid var(--line); border-radius: 10px;
@@ -99,6 +100,92 @@
   .lg-state-row input.k { width: 88px; }
   .lg-state-row input.v { flex: 1; min-width: 0; }
   .lg-state-row .rm { cursor: pointer; color: var(--ink-soft); font-size: 15px; padding: 0 3px; }
+  .lg-detail-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    margin: 0 0 10px;
+  }
+  .lg-detail-head .name {
+    display: flex; align-items: center; gap: 7px; min-width: 0;
+    font-size: 13px; font-weight: 600; color: var(--ink);
+  }
+  .lg-detail-head .name .dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  .lg-detail-head .name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lg-kind-badge {
+    flex-shrink: 0;
+    font-size: 10px; font-weight: 700; letter-spacing: .03em;
+    padding: 3px 7px; border-radius: 999px; border: 1px solid currentColor;
+  }
+  .lg-detail-label {
+    margin: 10px 0 6px; font-size: 11px; font-weight: 600;
+    color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em;
+  }
+  .lg-chip-row { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  .lg-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 12px; padding: 4px 8px;
+    border: 1px solid var(--line-strong); border-radius: 999px; background: var(--paper);
+  }
+  .lg-chip.warn { border-color: #E08A2E; color: #B86A12; background: #FFF7E6; }
+  .lg-chip .rm { cursor: pointer; color: var(--ink-soft); font-size: 13px; line-height: 1; }
+  .lg-chip-add {
+    font-family: inherit; font-size: 11.5px; padding: 4px 6px; max-width: 100%;
+    border: 1px dashed var(--line-strong); border-radius: 7px; background: var(--card); color: var(--ink-soft);
+  }
+  .lg-write-row, .lg-branch-row {
+    display: flex; gap: 6px; margin-bottom: 4px; align-items: center;
+  }
+  .lg-write-block { margin-bottom: 8px; }
+  .lg-write-block .lg-detail-line { margin-top: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; }
+  .lg-pred-row { display: flex; flex-direction: column; gap: 6px; }
+  .lg-detail-area {
+    width: 100%; min-height: 64px; font-family: inherit; font-size: 12px; line-height: 1.4;
+    padding: 6px 7px; border: 1px solid var(--line-strong); border-radius: 6px;
+    background: var(--paper); resize: vertical;
+  }
+  .lg-arg-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+  .lg-arg-row input { width: 72px; }
+  .lg-write-row select, .lg-branch-row select, .lg-branch-row input, .lg-detail-line {
+    font-family: inherit; font-size: 12.5px; padding: 5px 7px;
+    border: 1px solid var(--line-strong); border-radius: 6px; background: var(--paper);
+    min-width: 0;
+  }
+  .lg-write-row select.op { flex: 1; }
+  .lg-write-row select.op-append { color: #2C6690; font-weight: 600; }
+  .lg-write-row select.op-increment { color: #C2574A; font-weight: 600; }
+  .lg-branch-row input { width: 62px; }
+  .lg-branch-row select { flex: 1; }
+  .lg-detail-line { width: 100%; }
+  .lg-model-row { display: flex; gap: 6px; align-items: center; }
+  .lg-model-row input.model { flex: 1; min-width: 0; }
+  .lg-model-row input.temp { width: 52px; }
+  .lg-tool-source {
+    width: 100%; margin-bottom: 6px;
+  }
+  .lg-catalog-lock {
+    font-size: 12px; color: var(--ink); padding: 6px 8px;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--paper);
+  }
+  .lg-detail-hint { font-size: 11.5px; color: var(--ink-soft); margin-top: 4px; }
+  .lg-tool-legend {
+    font-size: 10px; line-height: 1.35; color: #C0392B; margin-top: 3px;
+  }
+  .lg-node.detail-warn:not(.selected):not(.problem) {
+    outline: 2px solid #E08A2E; outline-offset: 3px;
+  }
+  .lg-detail-flag {
+    display: inline-block; width: 14px; height: 14px; line-height: 14px;
+    font-size: 10px; font-weight: 700; border-radius: 50%;
+    background: #E08A2E; color: #fff; margin-right: 4px; vertical-align: middle;
+  }
+  .lg-node-badges {
+    display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin-top: 6px;
+  }
+  .lg-node-badge {
+    font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    padding: 2px 6px; border-radius: 999px; border: 1px solid currentColor; font-style: normal;
+  }
   .lg-log { font-size: 12.5px; line-height: 1.55; max-height: 260px; overflow-y: auto; }
   .lg-log .entry { padding: 5px 0; border-bottom: 1px solid var(--paper-line); }
   .lg-log .entry:last-child { border-bottom: none; }
@@ -120,14 +207,15 @@
     transform-origin: 0 0;
   }
   .lg-zoom-glass {
-    position: absolute; bottom: 16px; right: 16px; z-index: 30;
+    position: fixed; bottom: 24px; right: 24px; z-index: 80;
     display: flex; flex-direction: column; align-items: center; gap: 4px;
     padding: 6px; border-radius: 14px;
-    background: rgba(255,255,255,0.45);
+    background: rgba(255,255,255,0.72);
     backdrop-filter: blur(12px) saturate(150%);
     -webkit-backdrop-filter: blur(12px) saturate(150%);
-    border: 1px solid rgba(255,255,255,0.6);
-    box-shadow: 0 4px 20px rgba(30,20,60,0.12);
+    border: 1px solid rgba(255,255,255,0.7);
+    box-shadow: 0 4px 20px rgba(30,20,60,0.14);
+    pointer-events: auto;
   }
   .lg-zoom-glass button {
     width: 34px; height: 34px; border-radius: 10px;
@@ -587,6 +675,7 @@
         <div id="state-list"></div>
         <button class="lg-btn" style="width:100%; margin-top:4px;" onclick="addStateRow()">+ variable</button>
       </div>
+      <div class="lg-panel" id="node-detail-panel" style="display:none;"></div>
       <div class="lg-panel" id="results-panel" style="display:none;">
         <h3>results</h3>
         <div id="results-content" style="font-size:12.5px; line-height:1.5;"></div>
@@ -623,13 +712,13 @@
         </svg>
         <div id="inline-editor" class="lg-inline-editor" style="display:none;"></div>
       </div>
-      <div class="lg-zoom-glass">
-        <button onclick="zoomBy(0.1)" title="zoom in">+</button>
-        <span id="zoom-label">100%</span>
-        <button onclick="zoomBy(-0.1)" title="zoom out">−</button>
-        <button onclick="zoomReset()" title="reset zoom" class="reset">⤢</button>
-      </div>
     </div>
+  </div>
+  <div class="lg-zoom-glass" aria-label="Canvas zoom">
+    <button type="button" onclick="zoomBy(0.1)" title="zoom in">+</button>
+    <span id="zoom-label">100%</span>
+    <button type="button" onclick="zoomBy(-0.1)" title="zoom out">−</button>
+    <button type="button" onclick="zoomReset()" title="reset zoom" class="reset">⤢</button>
   </div>
 </div>
 
@@ -988,6 +1077,7 @@ function addNode(type, x, y, label) {
     x: x != null ? x : 80 + (Object.keys(nodes).length % 5) * 40,
     y: y != null ? y : 80 + (Object.keys(nodes).length % 5) * 90,
   };
+  ensureNodeDetail(nodes[id]);
   renderNodes();
   return id;
 }
@@ -1010,9 +1100,30 @@ function renderNodes() {
     el.style.background = hexToRgba(n.color, 0.09);
     el.style.color = n.color;
     el.dataset.id = n.id;
-    let inner = '<div class="lg-node-label">' + escapeHtml(n.label) + '</div>';
+    let inner = '<div class="lg-node-label">';
+    const issues = nodeDetailIssues(n);
+    if (issues.length) {
+      el.classList.add('detail-warn');
+      inner += '<span class="lg-detail-flag" title="' + escapeHtml(issues.join(' · ')) + '">!</span>';
+    }
+    inner += escapeHtml(n.label) + '</div>';
     if ((n.type === 'action' || n.type === 'router') && n.effect) {
       inner += '<div class="lg-effect">' + escapeHtml(n.effect) + '</div>';
+    }
+    if (n.type === 'action' && n.detail) {
+      const badges = [];
+      if (n.detail.kind === 'llm') badges.push('LLM');
+      if (n.detail.kind === 'tool') {
+        const spec = catalogById(n.detail.toolId);
+        badges.push(spec ? spec.tool : ((n.detail.tool || '').trim() ? n.detail.tool : 'custom'));
+      }
+      const writeCount = (n.detail.writes || []).length;
+      if (writeCount > 1) badges.push('writes ×' + writeCount);
+      if (badges.length) {
+        inner += '<div class="lg-node-badges">' + badges.map(b =>
+          '<span class="lg-node-badge">' + escapeHtml(b) + '</span>'
+        ).join('') + '</div>';
+      }
     }
     if (runCurrent === n.id && n.type === 'router') {
       const outs = edges.filter(e => e.from === n.id);
@@ -1267,7 +1378,8 @@ function buildOrthogonalPath(x1, y1, x2, y2, offsetMag, perp) {
       const ox = x1 + perp.px * offsetMag;
       raw = [[x1, y1], [ox, y1], [ox, y2], [x2, y2]];
     } else {
-      const breakY = y1 + 22;
+      const jog = Math.abs(dy) < 44 ? dy / 2 : (dy > 0 ? 22 : -22);
+      const breakY = y1 + jog;
       raw = [[x1, y1], [x1, breakY], [x2, breakY], [x2, y2]];
     }
   } else {
@@ -1337,9 +1449,9 @@ function renderEdges(dragMode) {
         const graphRight = Math.max.apply(null, rects.map(r => r.x + r.w));
         const graphLeft = Math.min.apply(null, rects.map(r => r.x));
         const graphBottom = Math.max.apply(null, rects.map(r => r.y + r.h));
-        const busRight = graphRight + 44 + lane * 24;
-        const busLeft = graphLeft - 44 - lane * 24;
-        const busBottom = graphBottom + 36 + lane * 28;
+        const busRight = graphRight + 72 + lane * 24;
+        const busLeft = graphLeft - 72 - lane * 24;
+        const busBottom = graphBottom + 48 + lane * 28;
         const obstacles = ids.filter(id => id !== e.from && id !== e.to).map(id => nodeRect(id));
 
         const exitR = anchorPoint(e.from, 'right', 3);
@@ -1428,7 +1540,7 @@ function renderEdges(dragMode) {
     delGroup.setAttribute('class', 'lg-edge-delete');
     delGroup.style.cursor = 'pointer';
     delGroup.style.pointerEvents = 'auto';
-    delGroup.addEventListener('click', (ev) => { ev.stopPropagation(); edges = edges.filter(x => x.id !== e.id); renderEdges(); });
+    delGroup.addEventListener('click', (ev) => { ev.stopPropagation(); deleteEdgeById(e.id); });
     const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     circle.setAttribute('cx', delX); circle.setAttribute('cy', delY); circle.setAttribute('r', '8');
     circle.setAttribute('fill', '#fff'); circle.setAttribute('stroke', color); circle.setAttribute('stroke-width', '1.3');
@@ -1447,8 +1559,11 @@ function onEdgeDblClick(edgeId) {
   if (!edge || !nodes[edge.to]) return;
   const t = nodes[edge.to];
   openInlineEditor(t.x, t.y + 62, [{ key: 'label', label: 'label for this connection', value: edge.label || '' }], (vals) => {
+    const prev = edge.label || '';
     edge.label = vals.label || '';
+    relabelRouterBranch(edge.from, edge.to, prev, edge.label);
     renderEdges();
+    renderNodeDetail();
   });
 }
 
@@ -1456,6 +1571,7 @@ function paintSelection() {
   document.querySelectorAll('.lg-node').forEach(el => {
     el.classList.toggle('selected', selected.has(el.dataset.id));
   });
+  renderNodeDetail();
 }
 
 function clearSelection() {
@@ -1485,6 +1601,7 @@ function deleteNodesByIds(ids) {
     selected.delete(id);
   });
   renderNodes();
+  renderNodeDetail();
 }
 
 function isMultiSelectModifier(ev) {
@@ -1732,12 +1849,15 @@ function onEdgeDragEnd(ev) {
     if (targetId !== fromId) {
       const newEdge = { id: uid('e'), from: fromId, to: targetId, label: '' };
       edges.push(newEdge);
+      rememberRouterBranch(fromId, targetId, '');
       renderNodes();
       if (nodes[fromId].type === 'router') {
         const t = nodes[targetId];
         openInlineEditor(t.x, t.y + 62, [{ key: 'label', label: 'label for this condition', value: '', placeholder: 'e.g. enough' }], (vals) => {
           newEdge.label = vals.label || '';
+          rememberRouterBranch(fromId, targetId, newEdge.label);
           renderEdges();
+          renderNodeDetail();
         });
       }
       return;
@@ -1748,8 +1868,7 @@ function onEdgeDragEnd(ev) {
 
 function onEdgeClick(edgeId) {
   if (mode !== 'delete') return;
-  edges = edges.filter(e => e.id !== edgeId);
-  renderEdges();
+  deleteEdgeById(edgeId);
 }
 
 function onNodeDblClick(ev, id) {
@@ -1764,6 +1883,7 @@ function onNodeDblClick(ev, id) {
     if (vals.label != null && vals.label.trim() !== '') n.label = vals.label;
     if (vals.effect != null) n.effect = vals.effect;
     renderNodes();
+    renderNodeDetail();
   });
 }
 
@@ -1777,6 +1897,7 @@ function toggleMode(m) {
 function addStateRow(key, val) {
   stateVars.push({ key: key || '', val: val || '' });
   renderState();
+  renderNodeDetail();
 }
 
 function renderState() {
@@ -1790,9 +1911,22 @@ function renderState() {
       '<input class="v" placeholder="value" value="' + escapeHtml(row.val) + '">' +
       '<span class="rm" title="remove">×</span>';
     const [ki, vi, rm] = div.querySelectorAll('input, .rm');
-    ki.addEventListener('input', () => stateVars[i].key = ki.value);
-    vi.addEventListener('input', () => stateVars[i].val = vi.value);
-    rm.addEventListener('click', () => { stateVars.splice(i, 1); renderState(); });
+    ki.addEventListener('focus', () => { ki.dataset.prev = (ki.value || '').trim(); });
+    ki.addEventListener('input', () => { stateVars[i].key = ki.value; });
+    ki.addEventListener('change', () => {
+      const prev = ki.dataset.prev || '';
+      const next = (ki.value || '').trim();
+      if (prev && next && prev !== next) renameStateKeyInDetails(prev, next);
+      renderNodes();
+      renderNodeDetail();
+    });
+    vi.addEventListener('input', () => { stateVars[i].val = vi.value; });
+    rm.addEventListener('click', () => {
+      stateVars.splice(i, 1);
+      renderState();
+      renderNodes();
+      renderNodeDetail();
+    });
     list.appendChild(div);
   });
 }
@@ -1881,6 +2015,817 @@ function resetRun() {
 
 function stateVarNames() {
   return stateVars.map(v => (v.key || '').trim()).filter(Boolean);
+}
+
+function defaultDetail(type) {
+  if (type === 'action') return { kind: 'function', reads: [], writes: [] };
+  if (type === 'router') {
+    return {
+      reads: [],
+      condition: '',
+      predLeft: '',
+      predOp: '>=',
+      predRightMode: 'key',
+      predRight: '',
+      branches: [],
+    };
+  }
+  return null;
+}
+
+function actionKindOf(d) {
+  if (d && d.kind === 'llm') return 'llm';
+  if (d && d.kind === 'tool') return 'tool';
+  return 'function';
+}
+
+/** Small catalog of well-known LangChain tools. Custom tools are free-form. */
+const TOOL_CATALOG = [
+  {
+    id: 'tavily',
+    label: 'Tavily Search',
+    tool: 'TavilySearch',
+    desc: 'Web search via Tavily. Returns snippets for a query.',
+    params: ['query'],
+    suggestFrom: { query: ['search_queries', 'query', 'messages'] },
+    importLine: 'from langchain_tavily import TavilySearch',
+    construct: 'TavilySearch(max_results=5)',
+    varName: 'tavily',
+  },
+  {
+    id: 'wikipedia',
+    label: 'Wikipedia',
+    tool: 'WikipediaQueryRun',
+    desc: 'Look up a topic on Wikipedia.',
+    params: ['query'],
+    suggestFrom: { query: ['query', 'topic', 'messages'] },
+    importLine: 'from langchain_community.tools import WikipediaQueryRun\nfrom langchain_community.utilities import WikipediaAPIWrapper',
+    construct: 'WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper())',
+    varName: 'wikipedia',
+  },
+  {
+    id: 'duckduckgo',
+    label: 'DuckDuckGo Search',
+    tool: 'DuckDuckGoSearchRun',
+    desc: 'Web search via DuckDuckGo (no API key).',
+    params: ['query'],
+    suggestFrom: { query: ['search_queries', 'query', 'messages'] },
+    importLine: 'from langchain_community.tools import DuckDuckGoSearchRun',
+    construct: 'DuckDuckGoSearchRun()',
+    varName: 'duckduckgo',
+  },
+  {
+    id: 'python_repl',
+    label: 'Python REPL',
+    tool: 'PythonREPLTool',
+    desc: 'Run Python code and return stdout.',
+    params: ['code'],
+    suggestFrom: { code: ['code', 'script'] },
+    importLine: 'from langchain_experimental.tools import PythonREPLTool',
+    construct: 'PythonREPLTool()',
+    varName: 'python_repl',
+  },
+];
+
+function catalogById(id) {
+  return TOOL_CATALOG.find(t => t.id === id) || null;
+}
+
+function inferToolId(name) {
+  const raw = String(name || '').trim().toLowerCase();
+  if (!raw) return 'custom';
+  const hit = TOOL_CATALOG.find(t => t.id === raw || t.tool.toLowerCase() === raw);
+  return hit ? hit.id : 'custom';
+}
+
+function pickStateKey(candidates) {
+  const keys = stateVarNames();
+  for (let i = 0; i < (candidates || []).length; i++) {
+    if (keys.indexOf(candidates[i]) >= 0) return candidates[i];
+  }
+  return keys[0] || '';
+}
+
+function applyCatalogTool(n, id) {
+  if (!n || !n.detail) return;
+  if (id === 'custom' || !catalogById(id)) {
+    n.detail.toolId = 'custom';
+    if (n.detail.tool == null) n.detail.tool = '';
+    if (n.detail.toolDesc == null) n.detail.toolDesc = '';
+    if (!Array.isArray(n.detail.toolArgs)) n.detail.toolArgs = [];
+    return;
+  }
+  const spec = catalogById(id);
+  n.detail.toolId = spec.id;
+  n.detail.tool = spec.tool;
+  n.detail.toolDesc = spec.desc;
+  n.detail.toolArgs = spec.params.map(param => ({
+    param: param,
+    fromKey: pickStateKey((spec.suggestFrom && spec.suggestFrom[param]) || [param]),
+  }));
+  const reads = {};
+  (n.detail.reads || []).forEach(k => { if (k) reads[k] = true; });
+  n.detail.toolArgs.forEach(a => { if (a.fromKey) reads[a.fromKey] = true; });
+  n.detail.reads = Object.keys(reads);
+}
+
+function toolNodes() {
+  return Object.values(nodes).filter(n => n.type === 'action' && n.detail && n.detail.kind === 'tool');
+}
+
+function defaultWriteExpr(op, key) {
+  const k = key || 'key';
+  if (op === 'increment') return 'state["' + k + '"] + 1';
+  if (op === 'append') return '[item]';
+  return 'state["' + k + '"]';
+}
+
+function formatPredicate(d) {
+  if (!d || !d.predLeft) return d && d.condition ? d.condition : '';
+  if (d.predOp === 'truthy') return d.predLeft;
+  if (d.predOp === 'empty') return 'not ' + d.predLeft;
+  const op = d.predOp || '>=';
+  const right = d.predRightMode === 'literal'
+    ? JSON.stringify(d.predRight || '')
+    : (d.predRight || '');
+  return (d.predLeft + ' ' + op + ' ' + right).trim();
+}
+
+function syncPredicateCondition(n) {
+  if (!n || !n.detail) return;
+  n.detail.condition = formatPredicate(n.detail);
+}
+
+function ensureNodeDetail(n) {
+  if (!n) return n;
+  if (n.type !== 'action' && n.type !== 'router') {
+    delete n.detail;
+    return n;
+  }
+  const d = (n.detail && typeof n.detail === 'object') ? n.detail : {};
+  if (n.type === 'action') {
+    const kind = actionKindOf(d);
+    const writes = Array.isArray(d.writes)
+      ? d.writes.filter(w => w && w.key).map(w => ({
+          key: String(w.key),
+          op: (w.op === 'append' || w.op === 'increment') ? w.op : 'set',
+          expr: w.expr != null ? String(w.expr) : '',
+        }))
+      : [];
+    n.detail = {
+      kind,
+      reads: Array.isArray(d.reads) ? d.reads.map(String) : [],
+      writes,
+    };
+    if (kind === 'llm') {
+      n.detail.model = d.model ? String(d.model) : 'gpt-4o-mini';
+      n.detail.temperature = typeof d.temperature === 'number' ? d.temperature : 0;
+      n.detail.system = d.system != null ? String(d.system) : '';
+      n.detail.prompt = d.prompt != null ? String(d.prompt) : '';
+    }
+    if (kind === 'tool') {
+      const toolId = d.toolId ? String(d.toolId) : inferToolId(d.tool);
+      const spec = catalogById(toolId);
+      n.detail.toolId = spec ? spec.id : 'custom';
+      n.detail.tool = spec ? spec.tool : (d.tool != null ? String(d.tool) : '');
+      n.detail.toolDesc = spec ? spec.desc : (d.toolDesc != null ? String(d.toolDesc) : '');
+      n.detail.toolArgs = Array.isArray(d.toolArgs)
+        ? d.toolArgs.map(a => ({
+            param: String((a && a.param) || ''),
+            fromKey: String((a && a.fromKey) || ''),
+          }))
+        : [];
+      if (spec && !n.detail.toolArgs.length) {
+        applyCatalogTool(n, spec.id);
+      }
+    }
+  } else {
+    n.detail = {
+      reads: Array.isArray(d.reads) ? d.reads.map(String) : [],
+      condition: d.condition != null ? String(d.condition) : '',
+      predLeft: d.predLeft != null ? String(d.predLeft) : '',
+      predOp: d.predOp || '>=',
+      predRightMode: d.predRightMode === 'literal' ? 'literal' : 'key',
+      predRight: d.predRight != null ? String(d.predRight) : '',
+      branches: Array.isArray(d.branches)
+        ? d.branches.map(b => ({
+            label: String((b && b.label) || ''),
+            targetNodeId: String((b && b.targetNodeId) || ''),
+          }))
+        : [],
+    };
+    if (!n.detail.predLeft && n.detail.condition) {
+      /* keep free-text condition until the user fills the predicate */
+    } else {
+      syncPredicateCondition(n);
+    }
+  }
+  return n;
+}
+
+function nodeDetailIssues(n) {
+  if (!n || !n.detail) return [];
+  const keys = new Set(stateVarNames());
+  const issues = [];
+  (n.detail.reads || []).forEach(k => {
+    if (k && !keys.has(k)) issues.push('reads "' + k + '" is not in shared state');
+  });
+  (n.detail.writes || []).forEach(w => {
+    if (w && w.key && !keys.has(w.key)) issues.push('writes "' + w.key + '" is not in shared state');
+    if (n.type === 'action' && w && w.key && !(w.expr || '').trim()) {
+      issues.push('write "' + w.key + '" has no expression');
+    }
+  });
+  if (n.type === 'action' && n.detail.kind === 'llm' && !(n.detail.system || '').trim()) {
+    issues.push('LLM node is missing a system prompt');
+  }
+  if (n.type === 'action' && n.detail.kind === 'tool') {
+    if (n.detail.toolId !== 'custom' && !catalogById(n.detail.toolId) && !(n.detail.tool || '').trim()) {
+      issues.push('tool node has no catalog tool or custom name');
+    }
+    if ((n.detail.toolId === 'custom' || !n.detail.toolId) && !(n.detail.tool || '').trim()) {
+      issues.push('custom tool is missing a name');
+    }
+    (n.detail.toolArgs || []).forEach(a => {
+      if (a.fromKey && !keys.has(a.fromKey)) issues.push('tool arg "' + a.param + '" reads missing key');
+      if (a.param && !a.fromKey) issues.push('tool arg "' + a.param + '" has no state key');
+    });
+  }
+  if (n.type === 'router') {
+    if (!(n.detail.predLeft || '').trim() && !(n.detail.condition || '').trim()) {
+      issues.push('conditional has no predicate');
+    }
+    if (n.detail.predLeft && !keys.has(n.detail.predLeft)) {
+      issues.push('predicate left side is not in shared state');
+    }
+    if (n.detail.predRightMode !== 'literal' && n.detail.predOp !== 'truthy' && n.detail.predOp !== 'empty') {
+      if (n.detail.predRight && !keys.has(n.detail.predRight)) {
+        issues.push('predicate right side is not in shared state');
+      }
+    }
+  }
+  (n.detail.branches || []).forEach(b => {
+    if (b && b.targetNodeId && !nodes[b.targetNodeId]) {
+      issues.push('branch "' + (b.label || 'unlabeled') + '" points at a deleted node');
+    }
+  });
+  return issues;
+}
+
+function renameStateKeyInDetails(prev, next) {
+  Object.values(nodes).forEach(n => {
+    if (!n.detail) return;
+    if (Array.isArray(n.detail.reads)) {
+      n.detail.reads = n.detail.reads.map(k => k === prev ? next : k);
+    }
+    if (Array.isArray(n.detail.writes)) {
+      n.detail.writes.forEach(w => { if (w.key === prev) w.key = next; });
+    }
+    if (Array.isArray(n.detail.toolArgs)) {
+      n.detail.toolArgs.forEach(a => { if (a.fromKey === prev) a.fromKey = next; });
+    }
+    if (n.detail.predLeft === prev) n.detail.predLeft = next;
+    if (n.detail.predRightMode === 'key' && n.detail.predRight === prev) n.detail.predRight = next;
+    syncPredicateCondition(n);
+  });
+}
+
+function rememberRouterBranch(fromId, toId, label) {
+  const n = nodes[fromId];
+  if (!n || n.type !== 'router') return;
+  ensureNodeDetail(n);
+  const hit = n.detail.branches.find(b => b.targetNodeId === toId);
+  if (hit) hit.label = label != null ? String(label) : hit.label;
+  else n.detail.branches.push({ label: label || '', targetNodeId: toId });
+}
+
+function relabelRouterBranch(fromId, toId, prevLabel, nextLabel) {
+  const n = nodes[fromId];
+  if (!n || n.type !== 'router') return;
+  ensureNodeDetail(n);
+  const hit = n.detail.branches.find(b => b.targetNodeId === toId && (b.label || '') === (prevLabel || ''));
+  if (hit) hit.label = nextLabel || '';
+  else rememberRouterBranch(fromId, toId, nextLabel);
+}
+
+function forgetRouterBranch(fromId, toId, label) {
+  const n = nodes[fromId];
+  if (!n || n.type !== 'router' || !n.detail) return;
+  const i = n.detail.branches.findIndex(b => b.targetNodeId === toId && (b.label || '') === (label || ''));
+  if (i >= 0) n.detail.branches.splice(i, 1);
+}
+
+function deleteEdgeById(edgeId) {
+  const e = edges.find(x => x.id === edgeId);
+  if (!e) return;
+  edges = edges.filter(x => x.id !== edgeId);
+  forgetRouterBranch(e.from, e.to, e.label || '');
+  renderEdges();
+  renderNodes();
+  renderNodeDetail();
+}
+
+function selectedDetailNode() {
+  if (selected.size !== 1) return null;
+  const n = nodes[[...selected][0]];
+  if (!n || (n.type !== 'action' && n.type !== 'router')) return null;
+  return ensureNodeDetail(n);
+}
+
+function unusedStateKeys(used) {
+  const taken = new Set(used || []);
+  return stateVarNames().filter(k => !taken.has(k));
+}
+
+function nodeOptions(currentId) {
+  return Object.values(nodes)
+    .filter(n => n.id !== currentId)
+    .sort((a, b) => String(a.label).localeCompare(String(b.label)));
+}
+
+function appendChipSelect(parent, unused, onPick) {
+  if (!unused.length) return;
+  const sel = document.createElement('select');
+  sel.className = 'lg-chip-add';
+  sel.innerHTML = '<option value="">+ add</option>' + unused.map(k =>
+    '<option value="' + escapeHtml(k) + '">' + escapeHtml(k) + '</option>'
+  ).join('');
+  sel.addEventListener('change', () => {
+    if (!sel.value) return;
+    onPick(sel.value);
+  });
+  parent.appendChild(sel);
+}
+
+function addDetailLabel(panel, text) {
+  const label = document.createElement('div');
+  label.className = 'lg-detail-label';
+  label.textContent = text;
+  panel.appendChild(label);
+}
+
+function renderReadChips(panel, n) {
+  const label = document.createElement('div');
+  label.className = 'lg-detail-label';
+  label.textContent = 'reads';
+  panel.appendChild(label);
+  const row = document.createElement('div');
+  row.className = 'lg-chip-row';
+  const keys = new Set(stateVarNames());
+  n.detail.reads.forEach((k, i) => {
+    const chip = document.createElement('span');
+    chip.className = 'lg-chip' + (keys.has(k) ? '' : ' warn');
+    chip.innerHTML = escapeHtml(k) + '<span class="rm" title="remove">×</span>';
+    chip.querySelector('.rm').addEventListener('click', () => {
+      n.detail.reads.splice(i, 1);
+      renderNodes();
+      renderNodeDetail();
+    });
+    row.appendChild(chip);
+  });
+  appendChipSelect(row, unusedStateKeys(n.detail.reads), (key) => {
+    n.detail.reads.push(key);
+    renderNodeDetail();
+  });
+  if (!stateVarNames().length) {
+    const hint = document.createElement('div');
+    hint.className = 'lg-detail-hint';
+    hint.textContent = 'add a variable in shared state first';
+    panel.appendChild(row);
+    panel.appendChild(hint);
+    return;
+  }
+  panel.appendChild(row);
+}
+
+function renderNodeDetail() {
+  const panel = document.getElementById('node-detail-panel');
+  if (!panel) return;
+  const n = selectedDetailNode();
+  if (!n) {
+    panel.style.display = 'none';
+    panel.innerHTML = '';
+    panel.style.borderColor = '';
+    return;
+  }
+  panel.style.display = 'block';
+  panel.style.borderColor = n.color || 'var(--line)';
+  panel.innerHTML = '';
+
+  const head = document.createElement('div');
+  head.className = 'lg-detail-head';
+  const kindLabel = n.type === 'action'
+    ? (n.detail.kind === 'llm' ? 'LLM node' : n.detail.kind === 'tool' ? 'tool node' : 'function')
+    : 'conditional';
+  head.innerHTML =
+    '<div class="name"><span class="dot" style="background:' + escapeHtml(n.color) + '"></span><span>' + escapeHtml(n.label) + '</span></div>' +
+    '<span class="lg-kind-badge" style="color:' + escapeHtml(n.color) + '">' + escapeHtml(kindLabel) + '</span>';
+  panel.appendChild(head);
+
+  if (n.type === 'action') {
+    const kindRow = document.createElement('select');
+    kindRow.className = 'lg-select';
+    kindRow.style.width = '100%';
+    kindRow.style.marginBottom = '4px';
+    kindRow.innerHTML =
+      '<option value="function"' + (n.detail.kind === 'function' ? ' selected' : '') + '>function</option>' +
+      '<option value="llm"' + (n.detail.kind === 'llm' ? ' selected' : '') + '>LLM</option>' +
+      '<option value="tool"' + (n.detail.kind === 'tool' ? ' selected' : '') + '>tool</option>';
+    kindRow.addEventListener('change', () => {
+      n.detail.kind = actionKindOf({ kind: kindRow.value });
+      if (n.detail.kind === 'llm') {
+        if (!n.detail.model) n.detail.model = 'gpt-4o-mini';
+        if (typeof n.detail.temperature !== 'number') n.detail.temperature = 0;
+        if (n.detail.system == null) n.detail.system = '';
+        if (n.detail.prompt == null) n.detail.prompt = '';
+      } else {
+        delete n.detail.model;
+        delete n.detail.temperature;
+        delete n.detail.system;
+        delete n.detail.prompt;
+      }
+      if (n.detail.kind === 'tool') {
+        applyCatalogTool(n, n.detail.toolId || 'custom');
+      } else {
+        delete n.detail.tool;
+        delete n.detail.toolId;
+        delete n.detail.toolDesc;
+        delete n.detail.toolArgs;
+      }
+      renderNodes();
+      renderNodeDetail();
+    });
+    panel.appendChild(kindRow);
+
+    renderReadChips(panel, n);
+
+    if (n.detail.kind === 'llm') {
+      addDetailLabel(panel, 'system prompt');
+      const sys = document.createElement('textarea');
+      sys.className = 'lg-detail-area';
+      sys.placeholder = 'You are…';
+      sys.value = n.detail.system || '';
+      sys.addEventListener('input', () => { n.detail.system = sys.value; });
+      panel.appendChild(sys);
+      addDetailLabel(panel, 'user prompt');
+      const pr = document.createElement('textarea');
+      pr.className = 'lg-detail-area';
+      pr.placeholder = 'Use {messages} or other read keys';
+      pr.value = n.detail.prompt || '';
+      pr.addEventListener('input', () => { n.detail.prompt = pr.value; });
+      panel.appendChild(pr);
+      addDetailLabel(panel, 'model');
+      const mRow = document.createElement('div');
+      mRow.className = 'lg-model-row';
+      const model = document.createElement('input');
+      model.className = 'lg-detail-line model';
+      model.value = n.detail.model || 'gpt-4o-mini';
+      model.addEventListener('input', () => { n.detail.model = model.value; });
+      const temp = document.createElement('input');
+      temp.className = 'lg-detail-line temp';
+      temp.type = 'number';
+      temp.step = '0.1';
+      temp.min = '0';
+      temp.max = '2';
+      temp.title = 'temperature';
+      temp.value = n.detail.temperature != null ? n.detail.temperature : 0;
+      temp.addEventListener('input', () => {
+        const v = parseFloat(temp.value);
+        n.detail.temperature = Number.isFinite(v) ? v : 0;
+      });
+      mRow.appendChild(model);
+      mRow.appendChild(temp);
+      panel.appendChild(mRow);
+    }
+
+    if (n.detail.kind === 'tool') {
+      addDetailLabel(panel, 'tool');
+      const source = document.createElement('select');
+      source.className = 'lg-select lg-tool-source';
+      source.innerHTML =
+        '<option value="custom"' + (n.detail.toolId === 'custom' || !n.detail.toolId ? ' selected' : '') + '>Custom…</option>' +
+        TOOL_CATALOG.map(t =>
+          '<option value="' + escapeHtml(t.id) + '"' + (n.detail.toolId === t.id ? ' selected' : '') + '>' +
+            escapeHtml(t.label) + '</option>'
+        ).join('');
+      source.addEventListener('change', () => {
+        applyCatalogTool(n, source.value);
+        renderNodes();
+        renderNodeDetail();
+      });
+      panel.appendChild(source);
+
+      const isCustom = n.detail.toolId === 'custom' || !catalogById(n.detail.toolId);
+      if (isCustom) {
+        const toolInp = document.createElement('input');
+        toolInp.className = 'lg-detail-line';
+        toolInp.placeholder = 'name, e.g. get_invoice';
+        toolInp.value = n.detail.tool || '';
+        toolInp.addEventListener('input', () => { n.detail.tool = toolInp.value; n.detail.toolId = 'custom'; });
+        toolInp.addEventListener('change', () => renderNodes());
+        panel.appendChild(toolInp);
+        addDetailLabel(panel, 'description');
+        const desc = document.createElement('textarea');
+        desc.className = 'lg-detail-area';
+        desc.placeholder = 'When should the agent use this? What does it return?';
+        desc.value = n.detail.toolDesc || '';
+        desc.addEventListener('input', () => { n.detail.toolDesc = desc.value; });
+        panel.appendChild(desc);
+      } else {
+        const lock = document.createElement('div');
+        lock.className = 'lg-catalog-lock';
+        lock.textContent = n.detail.tool;
+        panel.appendChild(lock);
+        const hint = document.createElement('div');
+        hint.className = 'lg-tool-legend';
+        hint.textContent = n.detail.toolDesc || '';
+        panel.appendChild(hint);
+      }
+
+      const hintRun = document.createElement('div');
+      hintRun.className = 'lg-tool-legend';
+      hintRun.textContent = 'Design only — tools are not executed on the canvas.';
+      panel.appendChild(hintRun);
+
+      addDetailLabel(panel, 'args (param ← state key)');
+      if (!Array.isArray(n.detail.toolArgs)) n.detail.toolArgs = [];
+      n.detail.toolArgs.forEach((a, i) => {
+        const row = document.createElement('div');
+        row.className = 'lg-arg-row';
+        const param = document.createElement('input');
+        param.className = 'lg-detail-line';
+        param.placeholder = 'param';
+        param.value = a.param || '';
+        param.disabled = !isCustom;
+        param.addEventListener('input', () => { a.param = param.value; });
+        const sel = document.createElement('select');
+        sel.className = 'lg-chip-add';
+        sel.style.flex = '1';
+        const none = document.createElement('option');
+        none.value = '';
+        none.textContent = 'state key';
+        sel.appendChild(none);
+        stateVarNames().forEach(k => {
+          const o = document.createElement('option');
+          o.value = k; o.textContent = k;
+          if (a.fromKey === k) o.selected = true;
+          sel.appendChild(o);
+        });
+        if (a.fromKey && !stateVarNames().includes(a.fromKey)) {
+          const dead = document.createElement('option');
+          dead.value = a.fromKey; dead.textContent = a.fromKey + ' (missing)'; dead.selected = true;
+          sel.appendChild(dead);
+        }
+        sel.addEventListener('change', () => {
+          a.fromKey = sel.value;
+          if (a.fromKey && n.detail.reads.indexOf(a.fromKey) < 0) n.detail.reads.push(a.fromKey);
+          renderNodes();
+        });
+        row.appendChild(param);
+        row.appendChild(sel);
+        if (isCustom) {
+          const rm = document.createElement('span');
+          rm.className = 'rm'; rm.textContent = '×'; rm.title = 'remove';
+          rm.style.cursor = 'pointer'; rm.style.color = 'var(--ink-soft)';
+          rm.addEventListener('click', () => {
+            n.detail.toolArgs.splice(i, 1);
+            renderNodeDetail();
+          });
+          row.appendChild(rm);
+        }
+        panel.appendChild(row);
+      });
+      if (isCustom) {
+        const addArg = document.createElement('button');
+        addArg.className = 'lg-btn';
+        addArg.style.width = '100%';
+        addArg.textContent = '+ arg';
+        addArg.addEventListener('click', () => {
+          n.detail.toolArgs.push({ param: '', fromKey: n.detail.reads[0] || '' });
+          renderNodeDetail();
+        });
+        panel.appendChild(addArg);
+      }
+    }
+
+    addDetailLabel(panel, 'writes → return dict');
+    const keys = new Set(stateVarNames());
+    n.detail.writes.forEach((w, i) => {
+      const block = document.createElement('div');
+      block.className = 'lg-write-block';
+      const row = document.createElement('div');
+      row.className = 'lg-write-row';
+      const chip = document.createElement('span');
+      chip.className = 'lg-chip' + (keys.has(w.key) ? '' : ' warn');
+      chip.textContent = w.key;
+      const op = document.createElement('select');
+      op.className = 'op op-' + w.op;
+      [['set', 'set'], ['append', 'append'], ['increment', 'increment +1']].forEach(([val, lab]) => {
+        const o = document.createElement('option');
+        o.value = val; o.textContent = lab;
+        if (w.op === val) o.selected = true;
+        op.appendChild(o);
+      });
+      op.addEventListener('change', () => {
+        w.op = op.value;
+        op.className = 'op op-' + w.op;
+        if (!(w.expr || '').trim()) w.expr = defaultWriteExpr(w.op, w.key);
+        expr.value = w.expr;
+      });
+      const rm = document.createElement('span');
+      rm.className = 'rm';
+      rm.title = 'remove';
+      rm.textContent = '×';
+      rm.style.cursor = 'pointer';
+      rm.style.color = 'var(--ink-soft)';
+      rm.addEventListener('click', () => {
+        n.detail.writes.splice(i, 1);
+        renderNodes();
+        renderNodeDetail();
+      });
+      row.appendChild(chip);
+      row.appendChild(op);
+      row.appendChild(rm);
+      const expr = document.createElement('input');
+      expr.className = 'lg-detail-line';
+      expr.placeholder = defaultWriteExpr(w.op, w.key);
+      expr.value = w.expr || '';
+      expr.title = 'Python RHS for this key';
+      expr.addEventListener('input', () => { w.expr = expr.value; });
+      expr.addEventListener('change', () => renderNodes());
+      block.appendChild(row);
+      block.appendChild(expr);
+      panel.appendChild(block);
+    });
+    const addWrite = document.createElement('div');
+    addWrite.className = 'lg-chip-row';
+    appendChipSelect(addWrite, unusedStateKeys(n.detail.writes.map(w => w.key)), (key) => {
+      n.detail.writes.push({ key, op: 'set', expr: defaultWriteExpr('set', key) });
+      renderNodes();
+      renderNodeDetail();
+    });
+    panel.appendChild(addWrite);
+    return;
+  }
+
+  renderReadChips(panel, n);
+
+  addDetailLabel(panel, 'if');
+  const pred = document.createElement('div');
+  pred.className = 'lg-pred-row';
+  const left = document.createElement('select');
+  left.className = 'lg-detail-line';
+  left.innerHTML = '<option value="">state key</option>' + stateVarNames().map(k =>
+    '<option value="' + escapeHtml(k) + '"' + (n.detail.predLeft === k ? ' selected' : '') + '>' + escapeHtml(k) + '</option>'
+  ).join('');
+  if (n.detail.predLeft && !stateVarNames().includes(n.detail.predLeft)) {
+    const dead = document.createElement('option');
+    dead.value = n.detail.predLeft; dead.textContent = n.detail.predLeft + ' (missing)'; dead.selected = true;
+    left.appendChild(dead);
+  }
+  left.addEventListener('change', () => {
+    n.detail.predLeft = left.value;
+    syncPredicateCondition(n);
+    renderNodes();
+  });
+  const op = document.createElement('select');
+  op.className = 'lg-detail-line';
+  [['>=', '>='], ['<=', '<='], ['>', '>'], ['<', '<'], ['==', '=='], ['!=', '!='], ['truthy', 'is truthy'], ['empty', 'is empty']].forEach(([val, lab]) => {
+    const o = document.createElement('option');
+    o.value = val; o.textContent = lab;
+    if ((n.detail.predOp || '>=') === val) o.selected = true;
+    op.appendChild(o);
+  });
+  op.addEventListener('change', () => {
+    n.detail.predOp = op.value;
+    syncPredicateCondition(n);
+    renderNodeDetail();
+  });
+  pred.appendChild(left);
+  pred.appendChild(op);
+  const needsRight = n.detail.predOp !== 'truthy' && n.detail.predOp !== 'empty';
+  if (needsRight) {
+    const mode = document.createElement('select');
+    mode.className = 'lg-detail-line';
+    mode.innerHTML =
+      '<option value="key"' + (n.detail.predRightMode !== 'literal' ? ' selected' : '') + '>other key</option>' +
+      '<option value="literal"' + (n.detail.predRightMode === 'literal' ? ' selected' : '') + '>literal</option>';
+    mode.addEventListener('change', () => {
+      n.detail.predRightMode = mode.value;
+      syncPredicateCondition(n);
+      renderNodeDetail();
+    });
+    pred.appendChild(mode);
+    if (n.detail.predRightMode === 'literal') {
+      const lit = document.createElement('input');
+      lit.className = 'lg-detail-line';
+      lit.placeholder = '3';
+      lit.value = n.detail.predRight || '';
+      lit.addEventListener('input', () => {
+        n.detail.predRight = lit.value;
+        syncPredicateCondition(n);
+      });
+      pred.appendChild(lit);
+    } else {
+      const right = document.createElement('select');
+      right.className = 'lg-detail-line';
+      right.innerHTML = '<option value="">state key</option>' + stateVarNames().map(k =>
+        '<option value="' + escapeHtml(k) + '"' + (n.detail.predRight === k ? ' selected' : '') + '>' + escapeHtml(k) + '</option>'
+      ).join('');
+      right.addEventListener('change', () => {
+        n.detail.predRight = right.value;
+        syncPredicateCondition(n);
+        renderNodes();
+      });
+      pred.appendChild(right);
+    }
+  }
+  panel.appendChild(pred);
+  const preview = document.createElement('div');
+  preview.className = 'lg-detail-hint';
+  preview.textContent = 'return branch if ' + (formatPredicate(n.detail) || '…');
+  panel.appendChild(preview);
+
+  addDetailLabel(panel, 'then return');
+  panel.appendChild(bLabel);
+  n.detail.branches.forEach((b, i) => {
+    const row = document.createElement('div');
+    row.className = 'lg-branch-row';
+    const lab = document.createElement('input');
+    lab.placeholder = 'label';
+    lab.value = b.label || '';
+    lab.addEventListener('input', () => {
+      const prev = b.label || '';
+      b.label = lab.value;
+      const edge = edges.find(e => e.from === n.id && e.to === b.targetNodeId && (e.label || '') === prev);
+      if (edge) edge.label = b.label;
+      renderEdges();
+    });
+    const sel = document.createElement('select');
+    const missing = b.targetNodeId && !nodes[b.targetNodeId];
+    if (missing) {
+      const dead = document.createElement('option');
+      dead.value = b.targetNodeId;
+      dead.textContent = '(missing node)';
+      dead.selected = true;
+      sel.appendChild(dead);
+      sel.classList.add('warn');
+      sel.style.borderColor = '#E08A2E';
+    }
+    nodeOptions(n.id).forEach(optn => {
+      const o = document.createElement('option');
+      o.value = optn.id;
+      o.textContent = optn.label;
+      if (optn.id === b.targetNodeId) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', () => {
+      const prevTarget = b.targetNodeId;
+      const nextTarget = sel.value;
+      const edge = edges.find(e => e.from === n.id && e.to === prevTarget && (e.label || '') === (b.label || ''));
+      b.targetNodeId = nextTarget;
+      if (edge && nodes[nextTarget]) edge.to = nextTarget;
+      else if (nodes[nextTarget] && !edges.some(e => e.from === n.id && e.to === nextTarget)) {
+        edges.push({ id: uid('e'), from: n.id, to: nextTarget, label: b.label || '' });
+      }
+      Object.keys(edgeRouteCache).forEach(k => { delete edgeRouteCache[k]; });
+      renderNodes();
+      renderNodeDetail();
+    });
+    const rm = document.createElement('span');
+    rm.className = 'rm';
+    rm.title = 'remove';
+    rm.textContent = '×';
+    rm.style.cursor = 'pointer';
+    rm.style.color = 'var(--ink-soft)';
+    rm.addEventListener('click', () => {
+      edges = edges.filter(e => !(e.from === n.id && e.to === b.targetNodeId && (e.label || '') === (b.label || '')));
+      n.detail.branches.splice(i, 1);
+      renderNodes();
+      renderNodeDetail();
+    });
+    row.appendChild(lab);
+    row.appendChild(sel);
+    row.appendChild(rm);
+    panel.appendChild(row);
+  });
+  const addBtn = document.createElement('button');
+  addBtn.className = 'lg-btn';
+  addBtn.style.width = '100%';
+  addBtn.style.marginTop = '4px';
+  addBtn.textContent = '+ branch';
+  addBtn.addEventListener('click', () => {
+    const opts = nodeOptions(n.id);
+    if (!opts.length) return;
+    const target = opts[0].id;
+    n.detail.branches.push({ label: '', targetNodeId: target });
+    if (!edges.some(e => e.from === n.id && e.to === target && (e.label || '') === '')) {
+      edges.push({ id: uid('e'), from: n.id, to: target, label: '' });
+    }
+    renderNodes();
+    renderNodeDetail();
+  });
+  panel.appendChild(addBtn);
 }
 
 function mentionsVar(text, varName) {
@@ -2060,10 +3005,12 @@ function resetAll() {
   resetRun();
   renderState();
   renderNodes();
+  renderNodeDetail();
 }
 
 function link(from, to, label) {
   edges.push({ id: uid('e'), from: from, to: to, label: label || '' });
+  rememberRouterBranch(from, to, label || '');
 }
 
 function setProblem(text) {
@@ -2166,134 +3113,82 @@ function layoutAddedTemplate(beforeIds, beforeBounds, startPos) {
   return newIds;
 }
 
-/** Canonical ReAct diagram layout (compact, fits a normal viewport). */
-function applyReactLayout(agentId, condId, toolsId, endId) {
-  // Keep the whole figure near top-left so it doesn't float in empty space on wide monitors.
-  const CX = 300;
-  const Y0 = 36;
+/** Vertical gap between stacked nodes so the arrow + midpoint × stay readable. */
+const SPINE_GAP = 56;
+
+function nodeBoxSize(id) {
+  const el = document.querySelector('.lg-node[data-id="' + id + '"]');
+  return { w: el ? el.offsetWidth : 140, h: el ? Math.max(el.offsetHeight, 44) : 50 };
+}
+
+function stackColumn(ids, centerX, y0, gap) {
+  gap = gap == null ? SPINE_GAP : gap;
   renderNodes();
-  const place = (id, cx, y) => {
+  let y = y0 == null ? 36 : y0;
+  ids.forEach(id => {
     const n = nodes[id];
     if (!n) return;
-    const el = document.querySelector('.lg-node[data-id="' + id + '"]');
-    const w = el ? el.offsetWidth : 140;
-    n.x = Math.round(cx - w / 2);
-    n.y = y;
-  };
-  // Vertical spine: start → agent → tools_condition → end
-  // tools sits to the left; yes goes left, no goes down; tools loops back to agent.
-  if (!_addingTemplate) place('start', CX, Y0);
-  place(agentId, CX, Y0 + 110);
-  place(condId, CX, Y0 + 240);
-  place(toolsId, CX - 210, Y0 + 240);
-  place(endId, CX, Y0 + 390);
+    const box = nodeBoxSize(id);
+    if (id === 'start' && _addingTemplate) {
+      y = n.y + box.h + gap;
+      return;
+    }
+    n.x = Math.round(centerX - box.w / 2);
+    n.y = Math.round(y);
+    y += box.h + gap;
+  });
   Object.keys(edgeRouteCache).forEach(k => { delete edgeRouteCache[k]; });
   Object.keys(edgeBusCache).forEach(k => { delete edgeBusCache[k]; });
   renderNodes();
 }
 
+/** Canonical ReAct diagram layout (compact, fits a normal viewport). */
+function applyReactLayout(agentId, condId, toolsId, endId) {
+  const CX = 300;
+  stackColumn(['start', agentId, condId, endId], CX, 36);
+  const cond = nodes[condId];
+  if (cond) placeCentered(toolsId, CX - 230, cond.y);
+}
+
 /** Canonical Reflection diagram: generate → should_continue → end, with reflect loop on the left. */
 /** Canonical Supervisor: start → supervisor → (writer | researcher | end), handoffs return on the sides. */
 function applySupervisorLayout(supervisorId, writerId, researcherId, endId) {
-  // Match the reference diagram:
-  //   start → supervisor; fan-out from BOTTOM to writer / end / researcher;
-  //   compact side handoffs back into supervisor.
   const CX = 360;
-  const Y0 = 36;
-  const SIDE = 210; // close enough that write/research exit bottom, not sides
-  renderNodes();
-  const place = (id, cx, y) => {
-    const n = nodes[id];
-    if (!n) return;
-    const el = document.querySelector('.lg-node[data-id="' + id + '"]');
-    const w = el ? el.offsetWidth : 140;
-    n.x = Math.round(cx - w / 2);
-    n.y = y;
-  };
-  if (!_addingTemplate) place('start', CX, Y0);
-  place(supervisorId, CX, Y0 + 120);
-  // Workers sit below supervisor, end further down on the center spine.
-  place(writerId, CX - SIDE, Y0 + 300);
-  place(researcherId, CX + SIDE, Y0 + 300);
-  place(endId, CX, Y0 + 460);
-  Object.keys(edgeRouteCache).forEach(k => { delete edgeRouteCache[k]; });
-  Object.keys(edgeBusCache).forEach(k => { delete edgeBusCache[k]; });
-  renderNodes();
+  const SIDE = 230;
+  stackColumn(['start', supervisorId], CX, 36);
+  const sup = nodes[supervisorId];
+  const yWorkers = (sup ? sup.y + nodeBoxSize(supervisorId).h : 36) + SPINE_GAP;
+  placeCentered(writerId, CX - SIDE, yWorkers);
+  placeCentered(researcherId, CX + SIDE, yWorkers);
+  const workerH = Math.max(nodeBoxSize(writerId).h, nodeBoxSize(researcherId).h);
+  placeCentered(endId, CX, yWorkers + workerH + SPINE_GAP);
 }
 
 /** Canonical Simple branch: start → has data? → (answer directly | search first) → end / end */
 function applySimpleBranchLayout(checkId, yesActionId, noActionId, endYesId, endNoId) {
   const CX = 360;
   const Y0 = 36;
-  const LEFT = CX - 220;
-  const RIGHT = CX + 220;
-  renderNodes();
-  const place = (id, cx, y) => {
-    const n = nodes[id];
-    if (!n) return;
-    const el = document.querySelector('.lg-node[data-id="' + id + '"]');
-    const w = el ? el.offsetWidth : 140;
-    n.x = Math.round(cx - w / 2);
-    n.y = y;
-  };
-  if (!_addingTemplate) place('start', CX, Y0);
-  place(checkId, CX, Y0 + 120);
-  place(yesActionId, LEFT, Y0 + 280);
-  place(noActionId, RIGHT, Y0 + 280);
-  place(endYesId, LEFT, Y0 + 430);
-  place(endNoId, RIGHT, Y0 + 430);
-  Object.keys(edgeRouteCache).forEach(k => { delete edgeRouteCache[k]; });
-  Object.keys(edgeBusCache).forEach(k => { delete edgeBusCache[k]; });
-  renderNodes();
+  const LEFT = CX - 230;
+  const RIGHT = CX + 230;
+  stackColumn(['start', checkId], CX, Y0);
+  const check = nodes[checkId];
+  const yActions = (check ? check.y + nodeBoxSize(checkId).h : Y0) + SPINE_GAP;
+  placeCentered(yesActionId, LEFT, yActions);
+  placeCentered(noActionId, RIGHT, yActions);
+  const actionH = Math.max(nodeBoxSize(yesActionId).h, nodeBoxSize(noActionId).h);
+  const yEnds = yActions + actionH + SPINE_GAP;
+  placeCentered(endYesId, LEFT, yEnds);
+  placeCentered(endNoId, RIGHT, yEnds);
 }
 
 /** Canonical Reflexion layout: start → draft → execute_tools → revise → event_loop → end, loop to tools. */
 function applyReflexionLayout(draftId, toolsId, reviseId, loopId, endId) {
-  const CX = 300;
-  const Y0 = 36;
-  renderNodes();
-  const place = (id, cx, y) => {
-    const n = nodes[id];
-    if (!n) return;
-    const el = document.querySelector('.lg-node[data-id="' + id + '"]');
-    const w = el ? el.offsetWidth : 140;
-    n.x = Math.round(cx - w / 2);
-    n.y = y;
-  };
-  if (!_addingTemplate) place('start', CX, Y0);
-  place(draftId, CX, Y0 + 100);
-  place(toolsId, CX, Y0 + 210);
-  place(reviseId, CX, Y0 + 320);
-  place(loopId, CX, Y0 + 430);
-  place(endId, CX, Y0 + 560);
-  Object.keys(edgeRouteCache).forEach(k => { delete edgeRouteCache[k]; });
-  Object.keys(edgeBusCache).forEach(k => { delete edgeBusCache[k]; });
-  renderNodes();
+  stackColumn(['start', draftId, toolsId, reviseId, loopId, endId], 360, 36);
 }
 
 /** Canonical Reflection layout: start → generate → reflect → should_continue → end | generate */
 function applyReflectionLayout(generateId, reflectId, condId, endId) {
-  const CX = 300;
-  const Y0 = 36;
-  renderNodes();
-  const place = (id, cx, y) => {
-    const n = nodes[id];
-    if (!n) return;
-    const el = document.querySelector('.lg-node[data-id="' + id + '"]');
-    const w = el ? el.offsetWidth : 140;
-    n.x = Math.round(cx - w / 2);
-    n.y = y;
-  };
-  // Vertical spine: start → generate → reflect → should_continue → end
-  // loop back: should_continue → generate goes left bus
-  if (!_addingTemplate) place('start', CX, Y0);
-  place(generateId, CX, Y0 + 110);
-  place(reflectId, CX, Y0 + 240);
-  place(condId, CX, Y0 + 370);
-  place(endId, CX, Y0 + 510);
-  Object.keys(edgeRouteCache).forEach(k => { delete edgeRouteCache[k]; });
-  Object.keys(edgeBusCache).forEach(k => { delete edgeBusCache[k]; });
-  renderNodes();
+  stackColumn(['start', generateId, reflectId, condId, endId], 360, 36);
 }
 
 /** Align node left edges so their centers share the same X (after DOM measure). */
@@ -2317,6 +3212,10 @@ function placeCentered(id, centerX, y) {
   const w = el ? el.offsetWidth : 130;
   n.x = Math.round(centerX - w / 2);
   n.y = y;
+  if (el) {
+    el.style.left = n.x + 'px';
+    el.style.top = n.y + 'px';
+  }
 }
 
 function loadTemplate(key) {
@@ -2372,7 +3271,7 @@ function loadTemplate(key) {
     link(ev, end, 'enough');
     link(ev, plan, 'retry');
     applyTemplateState([{ key: 'attempts', val: '0' }, { key: 'enough', val: 'false' }, { key: 'results', val: '' }]);
-    alignColumnCenters(['start', plan, tool, ev, end], CX);
+    stackColumn(['start', plan, tool, ev, end], CX, 36);
   } else if (key === 'react') {
     setProblem('ReAct agent: the model reasons, optionally calls tools, and loops until it can answer.');
     const agent = addNode('action', 0, 0, 'agent');
@@ -2398,6 +3297,29 @@ function loadTemplate(key) {
     const cond = addNode('router', 0, 0, 'should_continue');
     nodes[cond].effect = 'OK or max iter?';
     const end = addNode('end', 0, 0, 'end');
+    nodes[gen].detail = {
+      kind: 'llm', reads: ['messages'],
+      writes: [{ key: 'messages', op: 'append', expr: '[response]' }],
+      model: 'gpt-4o-mini', temperature: 0,
+      system: 'You improve drafts. Return only the improved text.',
+      prompt: '{messages}',
+    };
+    nodes[reflect].detail = {
+      kind: 'llm', reads: ['messages', 'iterations'],
+      writes: [
+        { key: 'messages', op: 'append', expr: '[HumanMessage(content=critique)]' },
+        { key: 'iterations', op: 'increment', expr: 'state["iterations"] + 1' },
+      ],
+      model: 'gpt-4o-mini', temperature: 0,
+      system: 'Critique the latest draft. If it is good enough, start with OK. Otherwise give revision notes.',
+      prompt: '{messages}',
+    };
+    nodes[cond].detail.reads = ['iterations', 'max_iterations'];
+    nodes[cond].detail.predLeft = 'iterations';
+    nodes[cond].detail.predOp = '>=';
+    nodes[cond].detail.predRightMode = 'key';
+    nodes[cond].detail.predRight = 'max_iterations';
+    nodes[cond].detail.condition = 'iterations >= max_iterations';
     link('start', gen);
     link(gen, reflect);
     link(reflect, cond);
@@ -2420,6 +3342,37 @@ function loadTemplate(key) {
     const eventLoop = addNode('router', 0, 0, 'event_loop');
     nodes[eventLoop].effect = 'tool_visits ≥ MAX_ITERATIONS?';
     const end = addNode('end', 0, 0, 'end');
+    nodes[draft].detail = {
+      kind: 'llm', reads: ['messages'],
+      writes: [
+        { key: 'messages', op: 'append', expr: '[response]' },
+        { key: 'search_queries', op: 'set', expr: 'response.tool_calls[0]["args"]["search_queries"]' },
+      ],
+      model: 'gpt-4o-mini', temperature: 0,
+      system: 'You are an expert researcher. Answer, critique, and propose search queries.',
+      prompt: '{messages}',
+    };
+    nodes[execTools].detail = {
+      kind: 'tool', reads: ['search_queries'],
+      toolId: 'tavily',
+      tool: 'TavilySearch',
+      toolDesc: 'Web search via Tavily. Returns snippets for a query.',
+      toolArgs: [{ param: 'query', fromKey: 'search_queries' }],
+      writes: [{ key: 'messages', op: 'append', expr: '[ToolMessage(content=result)]' }],
+    };
+    nodes[revise].detail = {
+      kind: 'llm', reads: ['messages'],
+      writes: [{ key: 'messages', op: 'append', expr: '[response]' }],
+      model: 'gpt-4o-mini', temperature: 0,
+      system: 'Revise the answer using tool results. Include citations.',
+      prompt: '{messages}',
+    };
+    nodes[eventLoop].detail.reads = ['tool_visits', 'max_iterations'];
+    nodes[eventLoop].detail.predLeft = 'tool_visits';
+    nodes[eventLoop].detail.predOp = '>=';
+    nodes[eventLoop].detail.predRightMode = 'key';
+    nodes[eventLoop].detail.predRight = 'max_iterations';
+    nodes[eventLoop].detail.condition = 'tool_visits >= max_iterations';
     link('start', draft);
     link(draft, execTools);
     link(execTools, revise);
@@ -2428,6 +3381,7 @@ function loadTemplate(key) {
     link(eventLoop, end, 'si');
     applyTemplateState([
       { key: 'messages', val: '[]' },
+      { key: 'search_queries', val: '[]' },
       { key: 'tool_visits', val: '0' },
       { key: 'max_iterations', val: '2' },
     ]);
@@ -2444,7 +3398,7 @@ function loadTemplate(key) {
     link(need, tool, 'yes');
     link(tool, llm, 'observe');
     applyTemplateState([{ key: 'messages', val: '[]' }, { key: 'pending_tool_calls', val: '[]' }]);
-    alignColumnCenters(['start', llm, need, end], CX);
+    stackColumn(['start', llm, need, end], CX, 36);
     placeCentered(tool, CX + 280, nodes[need].y);
   } else if (key === 'plan_execute') {
     setProblem('Plan-and-execute: first create a multi-step plan, then execute steps one by one until the plan is complete.');
@@ -2461,7 +3415,7 @@ function loadTemplate(key) {
       { key: 'step_index', val: '0' },
       { key: 'step_results', val: '[]' },
     ]);
-    alignColumnCenters(['start', planner, exec, more, end], CX);
+    stackColumn(['start', planner, exec, more, end], CX, 36);
   } else if (key === 'rag') {
     setProblem('RAG pipeline: retrieve documents for a question; if context is enough, generate an answer, otherwise fall back.');
     placeStart(CX, 30);
@@ -2481,7 +3435,7 @@ function loadTemplate(key) {
       { key: 'documents', val: '[]' },
       { key: 'answer', val: '' },
     ]);
-    alignColumnCenters(['start', retrieve, enough, gen, end], CX);
+    stackColumn(['start', retrieve, enough, gen, end], CX, 36);
     placeCentered(fallback, CX + 280, nodes[enough].y);
   } else if (key === 'supervisor') {
     setProblem('Supervisor routes each turn to a specialist worker (researcher or writer), then decides whether to continue or finish.');
@@ -2526,8 +3480,8 @@ function loadTemplate(key) {
     placeCentered('start', CX - 260, 220);
     placeCentered(split, CX, 200);
     placeCentered(w1, CX + 260, 20);
-    placeCentered(w2, CX + 260, 200);
-    placeCentered(w3, CX + 260, 380);
+    placeCentered(w2, CX + 260, 240);
+    placeCentered(w3, CX + 260, 460);
     placeCentered(merge, CX + 520, 200);
     placeCentered(end, CX + 760, 200);
   } else if (key === 'hitl') {
@@ -2544,10 +3498,12 @@ function loadTemplate(key) {
       { key: 'human_feedback', val: '' },
       { key: 'approved', val: 'false' },
     ]);
-    alignColumnCenters(['start', draft, approve], CX);
-    placeCentered(apply, CX + 280, 180);
-    placeCentered(revise, CX + 280, 420);
-    placeCentered(end, CX + 520, 180);
+    stackColumn(['start', draft, approve], CX, 36);
+    const approveBox = nodeBoxSize(approve);
+    const applyY = nodes[approve].y;
+    placeCentered(apply, CX + 280, applyY);
+    placeCentered(revise, CX + 280, applyY + Math.max(nodeBoxSize(apply).h, approveBox.h) + SPINE_GAP);
+    placeCentered(end, CX + 520, applyY);
   } else if (key === 'guardrails') {
     setProblem('Guardrails: validate the user input, run the agent, then check the output before returning it.');
     placeStart(CX - 280, 200);
@@ -2594,6 +3550,7 @@ function loadTemplate(key) {
   resetRun();
   renderState();
   renderNodes();
+  renderNodeDetail();
   // Only re-center when loading into an empty canvas; additive keeps your view/layout.
   if (!additive) centerGraphInView();
   else {
@@ -2602,6 +3559,7 @@ function loadTemplate(key) {
       if (id !== 'start' && !beforeIds.has(id)) selected.add(id);
     });
     renderNodes();
+    renderNodeDetail();
   }
 }
 
@@ -2650,7 +3608,11 @@ function serializeGraph() {
     version: 1,
     problem: document.getElementById('problem-desc').value,
     stateVars: stateVars.map(v => ({ key: v.key, val: v.val })),
-    nodes: Object.values(nodes).map(n => ({ id: n.id, type: n.type, label: n.label, effect: n.effect, color: n.color, x: n.x, y: n.y })),
+    nodes: Object.values(nodes).map(n => {
+      const row = { id: n.id, type: n.type, label: n.label, effect: n.effect, color: n.color, x: n.x, y: n.y };
+      if ((n.type === 'action' || n.type === 'router') && n.detail) row.detail = JSON.parse(JSON.stringify(n.detail));
+      return row;
+    }),
     edges: edges.map(e => ({ id: e.id, from: e.from, to: e.to, label: e.label })),
   };
 }
@@ -2689,16 +3651,28 @@ function loadGraphData(data) {
   nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = [];
   (data.nodes || []).forEach(n => {
     nodes[n.id] = { id: n.id, type: n.type, label: n.label, effect: n.effect || '', color: n.color || nextColor(n.type), x: n.x || 60, y: n.y || 60 };
+    if (n.detail) nodes[n.id].detail = n.detail;
+    ensureNodeDetail(nodes[n.id]);
     const seqNum = parseInt(String(n.id).split('_').pop());
     if (!isNaN(seqNum) && seqNum > nodeSeq) nodeSeq = seqNum;
   });
   ensureStartNode();
   (data.edges || []).forEach(e => edges.push({ id: e.id, from: e.from, to: e.to, label: e.label || '' }));
+  Object.values(nodes).forEach(n => {
+    if (n.type !== 'router') return;
+    ensureNodeDetail(n);
+    if (!n.detail.branches.length) {
+      edges.filter(e => e.from === n.id).forEach(e => {
+        n.detail.branches.push({ label: e.label || '', targetNodeId: e.to });
+      });
+    }
+  });
   (data.stateVars || []).forEach(v => stateVars.push({ key: v.key, val: v.val }));
   document.getElementById('problem-desc').value = data.problem || '';
   resetRun();
   renderState();
   renderNodes();
+  renderNodeDetail();
 }
 
 function buildGraphSVG() {
@@ -3159,6 +4133,47 @@ function detectCodePattern() {
   return 'generic';
 }
 
+function emitToolsPythonBlock() {
+  const list = toolNodes();
+  if (!list.length) return { extraImports: '', defs: '' };
+
+  const importLines = ['from langchain_core.tools import tool'];
+  const seenCatalog = {};
+  const seenCustom = {};
+  const defs = ['# Tools are designed here; LangCanvas does not execute them.'];
+
+  list.forEach(n => {
+    const spec = catalogById(n.detail.toolId);
+    if (spec) {
+      if (seenCatalog[spec.id]) return;
+      seenCatalog[spec.id] = true;
+      spec.importLine.split('\n').forEach(line => {
+        if (importLines.indexOf(line) < 0) importLines.push(line);
+      });
+      defs.push(spec.varName + ' = ' + spec.construct);
+      return;
+    }
+    const fn = pyName(n.detail.tool, n.id);
+    if (seenCustom[fn]) return;
+    seenCustom[fn] = true;
+    const params = (n.detail.toolArgs || []).filter(a => a.param);
+    const sig = params.length
+      ? params.map(a => pyName(a.param, 'arg') + ': str').join(', ')
+      : 'input: str';
+    const doc = String(n.detail.toolDesc || 'Custom tool.').replace(/"""/g, "''");
+    defs.push('');
+    defs.push('@tool');
+    defs.push('def ' + fn + '(' + sig + ') -> str:');
+    defs.push('    """' + doc + '"""');
+    defs.push('    raise NotImplementedError("Custom tool: implement ' + fn + '")');
+  });
+
+  return {
+    extraImports: importLines.join('\n') + '\n',
+    defs: defs.join('\n') + '\n\n',
+  };
+}
+
 function buildLocalSkeletonCode() {
   const nameOf = {};
   Object.values(nodes).forEach(n => {
@@ -3174,17 +4189,29 @@ function buildLocalSkeletonCode() {
   }
 
   const stateKeys = stateVars.map(v => (v.key || '').trim()).filter(Boolean);
+  const toolsPy = emitToolsPythonBlock();
   let code = 'from typing import TypedDict, Literal\n';
-  code += 'from langgraph.graph import StateGraph, START, END\n\n\n';
+  code += 'from langgraph.graph import StateGraph, START, END\n';
+  if (toolsPy.extraImports) code += toolsPy.extraImports;
+  code += '\n\n';
   code += 'class State(TypedDict):\n';
   if (stateKeys.length) stateKeys.forEach(k => { code += '    ' + pyName(k, k) + ': str\n'; });
   else code += '    pass\n';
   code += '\n\n';
+  if (toolsPy.defs) code += toolsPy.defs;
 
   Object.values(nodes).forEach(n => {
     if (n.type !== 'action') return;
     code += 'def ' + nameOf[n.id] + '(state: State) -> dict:\n';
     code += '    # ' + (n.effect ? n.effect : 'TODO: implement this step') + '\n';
+    if (n.detail && n.detail.kind === 'tool') {
+      const spec = catalogById(n.detail.toolId);
+      const argPairs = (n.detail.toolArgs || []).filter(a => a.param && a.fromKey).map(a =>
+        '"' + pyName(a.param, a.param) + '": state["' + pyName(a.fromKey, a.fromKey) + '"]'
+      );
+      const callee = spec ? spec.varName : pyName(n.detail.tool, n.id);
+      code += '    result = ' + callee + '.invoke({' + argPairs.join(', ') + '})\n';
+    }
     code += '    return {}\n\n\n';
   });
 

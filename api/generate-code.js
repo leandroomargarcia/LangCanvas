@@ -28,7 +28,11 @@ CRITICAL MAPPING RULES (LangCanvas → LangGraph):
 7. Never write add_edge("generate", "should_continue") then treat should_continue as a node.
 8. Prefer current LangGraph APIs from the MCP docs context.
 9. Implement node bodies from "effect" / problem description (LLM calls when it makes sense). English only.
-10. Output plain Python only. Multi-file: "# chains.py" / "# main.py" headers. No markdown fences. No trailing junk.`;
+10. If an action has detail.kind "tool":
+    - detail.toolId is a catalog id (tavily, wikipedia, duckduckgo, python_repl) → import that LangChain tool and wire args from detail.toolArgs (param ← state key fromKey).
+    - detail.toolId "custom" (or unknown) → emit an @tool stub named detail.tool with detail.toolDesc and toolArgs; raise NotImplementedError in the body.
+    Tools are design-time only; still generate real Python that compiles.
+11. Output plain Python only. Multi-file: "# chains.py" / "# main.py" headers. No markdown fences. No trailing junk.`;
 
 const hitsByUid = new Map();
 const lastOkByUid = new Map();
