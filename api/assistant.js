@@ -12,7 +12,7 @@ const GUEST_LIMIT = PLAN_LIMITS.guest;
 const MAX_QUESTION = 800;
 const MAX_GRAPH_CHARS = 8000;
 const MAX_OUTPUT_TOKENS = 1200;
-const COOLDOWN_MS = 20 * 1000;
+const COOLDOWN_MS = 3 * 1000;
 
 const SYSTEM_PROMPT = `You are a senior AI engineer tutoring a student who is designing a LangGraph-style system on the LangCanvas visual canvas — any flow, not only Reflexion.
 
@@ -50,11 +50,13 @@ TEACHING RULES (non-negotiable):
 - ONE construction step after the answer. First WHY, then canvas clicks, then wait.
 - Talk about the canvas. Do not tell them to type ToolNode, ToolMessage, bind_tools, or tool_choice as Python on the canvas.
 - Name THEIR nodes when those labels are real. Ignore placeholders like “new action”.
-- Match the student's language (Spanish or English).
-- Shape every reply exactly as:
-  **Why:** one short paragraph
-  **Do this:** a numbered list of 2–5 canvas actions
-  **Then:** When that is done, say next.
+- Match the student's language (Spanish or English). If they write in Spanish, the whole reply is Spanish. Kickers: **Por qué:** **Hacé esto:** **Después:**
+- If they say they do not understand (no entiendo, explain another way, hola? after a lesson), REPHRASE from scratch. Do not paste DETECTED LESSON wording. Use a shorter why and exact UI clicks (which panel, + schema, field names).
+- DETECTED LESSON is a hint of which step, not a script to copy.
+- Shape every reply as labeled sections:
+  English: **Why:** **Do this:** **Then:**
+  Spanish: **Por qué:** **Hacé esto:** **Después:**
+  A numbered list of 2–5 canvas actions. Do not copy DETECTED LESSON text.
 - No markdown fences. No catalog of templates unless they ask which pattern fits the job.
 - You design. You do not dump full programs. If they want Python: Export → Generate code, after the dictionary is complete.
 
@@ -250,7 +252,7 @@ async function callGemini(contents) {
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents,
-      generationConfig: { temperature: 0.4, maxOutputTokens: MAX_OUTPUT_TOKENS },
+      generationConfig: { temperature: 0.55, maxOutputTokens: MAX_OUTPUT_TOKENS },
     }),
   });
   if (!geminiRes.ok) {
@@ -361,7 +363,7 @@ export default async function handler(req, res) {
     role: 'user',
     parts: [{
       text: 'CURRENT CANVAS:\n' + graphText
-        + '\n\nDETECTED LESSON (teach ONLY this):\n' + lessonText
+        + '\n\nSTEP HINT (which construction step — do NOT copy this wording; answer the QUESTION):\n' + lessonText
         + '\n\nQUESTION:\n' + question,
     }],
   });

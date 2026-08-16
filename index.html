@@ -6532,54 +6532,8 @@ function detectLesson(g, question) {
     Object.assign({}, extra, { then: 'Ask if you want a review of a specific node, or generate code.' }));
 }
 
-function formatLesson(row) {
-  if (!row) return '';
-  const lines = [];
-  lines.push('**Why:** ' + row.why);
-  lines.push('');
-  lines.push('**Do this:**');
-  (row.do || []).forEach((d, i) => lines.push((i + 1) + '. ' + d));
-  lines.push('');
-  lines.push('**Then:** ' + (row.then || 'When that is done, say next.'));
-  return lines.join('\n');
-}
-
 function openingCoachMessage() {
-  const g = compactGraphForCoach();
-  const row = detectLesson(g, '');
-  return 'I will walk you like an engineer: one step, why it exists, then what to do on the canvas. Say **next** when it is done — or **I am stuck** for the exact fields.\n\n' + formatLesson(row);
-}
-
-const CANVAS_TEMPLATES = [
-  { keys: ['simple', 'branch'], name: 'Simple branch', flow: 'start → decision → path A | path B', next: 'Draw one conditional with two labeled exits, then an action on each path and an end.' },
-  { keys: ['retry', 'repair'], name: 'Retry / repair', flow: 'try → evaluate → retry or end', next: 'Add an attempts counter in state. The conditional retries while attempts < max, otherwise end.' },
-  { keys: ['react'], name: 'ReAct', flow: 'agent → tools_condition → tools → agent', next: 'One LLM (agent) plus a tools node. The conditional asks: did the model request a tool? Yes → tools; no → end. Loop tools back to the agent.' },
-  { keys: ['reflection'], name: 'Reflection', flow: 'generate → critique → refine loop', next: 'Two LLM nodes (draft and critique). Stop with a predicate or max iterations — no web search in this pattern.' },
-  { keys: ['reflexion'], name: 'Reflexion', flow: 'draft → execute_tools → revise → event_loop', next: 'Write the job first, then roles, then the data on each arrow. Do not load the template if you want to understand the design.' },
-  { keys: ['tool_calling', 'tool-calling', 'tool calling'], name: 'Tool-calling', flow: 'LLM ⇄ tools until a final answer', next: 'Same idea as ReAct: the model either calls a tool or finishes.' },
-  { keys: ['plan', 'plan_execute', 'plan-and-execute'], name: 'Plan-and-execute', flow: 'create plan → execute step → more steps? → end', next: 'State needs a plan list and an index.' },
-  { keys: ['rag', 'retriev'], name: 'RAG', flow: 'retrieve → enough context? → generate | fallback', next: 'Retriever is a tool. Conditional on context quality. Generator is an LLM.' },
-  { keys: ['supervisor', 'worker'], name: 'Supervisor + workers', flow: 'supervisor → worker A|B → supervisor → end', next: 'Supervisor routes; each worker is an action; loop until the supervisor chooses end.' },
-  { keys: ['map', 'reduce', 'map_reduce'], name: 'Map-reduce', flow: 'split → workers → merge', next: 'Split writes chunks; workers run; merge combines.' },
-  { keys: ['hitl', 'human', 'approve'], name: 'Human-in-the-loop', flow: 'draft → human approve/reject → continue or revise', next: 'The conditional is a human decision.' },
-  { keys: ['guard', 'validat'], name: 'Guardrails', flow: 'validate input → agent → check output', next: 'Refuse or repair bad input, then bad output, around the agent.' },
-];
-
-function matchTemplateGuide(question) {
-  const q = String(question || '').toLowerCase();
-  return CANVAS_TEMPLATES.find(t => t.keys.some(k => q.indexOf(k) >= 0)) || null;
-}
-
-function localCoachReply(question) {
-  const g = compactGraphForCoach();
-  const q = String(question || '');
-  if (/template|which pattern|what (should|do) i (use|build|start)/i.test(q) && !inferCoachPattern(g, q)) {
-    const tmpl = matchTemplateGuide(q);
-    if (tmpl) {
-      return '**Why:** Pick the pattern from the job, then we build it one step at a time — not by dumping the template.\n\n**Do this:**\n1. ' + tmpl.name + ': ' + tmpl.flow + '.\n2. ' + tmpl.next + '\n3. Write that job in “problem to solve” if it is still empty.\n\n**Then:** When that is done, say next.';
-    }
-  }
-  return formatLesson(detectLesson(g, q));
+  return 'I look at your canvas and walk one step at a time — why it exists, then what to click. Ask in your language. If something is unclear, say so and I will explain it another way.';
 }
 
 function renderAssistant() {
@@ -6656,7 +6610,7 @@ async function sendAssistant(ev) {
   if (history.length && history[history.length - 1].role === 'user') history.pop();
 
   let reply = '';
-  let source = 'local';
+  let fail = '';
   try {
     const guest = typeof isLangCanvasGuest === 'function' && isLangCanvasGuest();
     let idToken = null;
@@ -6681,19 +6635,26 @@ async function sendAssistant(ev) {
         lesson: lesson,
       }),
     });
+    let data = null;
+    try { data = await res.json(); } catch (_) { data = null; }
     if (res.ok) {
-      const data = await res.json();
       reply = (data && (data.reply || data.text)) || '';
-      if (reply) source = 'live';
+    } else {
+      fail = (data && data.error) || ('Assistant unavailable (' + res.status + ').');
     }
-  } catch (_) { /* local coach */ }
+  } catch (_) {
+    fail = 'Could not reach the assistant. Check your connection and try again.';
+  }
 
-  if (!reply) reply = localCoachReply(question);
+  if (!reply) {
+    reply = fail
+      ? ('**Why:** The live coach did not answer — there is no offline script pretending to be it.\n\n**Do this:**\n1. ' + fail + '\n2. If you hit the daily AI limit, sign in / wait until tomorrow, then ask again.\n\n**Then:** Send the same question once the live coach is back.')
+      : 'The live coach returned an empty reply. Send the question again.';
+  }
   const pending = assistantMessages.find(m => m.pending);
   if (pending) {
     pending.text = reply;
     pending.pending = false;
-    if (source === 'local') pending.text = reply;
   } else {
     assistantMessages.push({ role: 'assistant', text: reply });
   }
