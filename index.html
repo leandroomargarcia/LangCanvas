@@ -110,18 +110,37 @@
     display: flex; flex-direction: column; gap: 8px;
   }
   .lg-assist-bubble {
-    font-size: 12.5px; line-height: 1.45; padding: 8px 10px; border-radius: 10px;
-    max-width: 100%; white-space: pre-wrap; word-break: break-word;
+    font-size: 12.5px; line-height: 1.5; padding: 10px 12px; border-radius: 10px;
+    max-width: 100%; word-break: break-word;
   }
   .lg-assist-bubble.bot {
     background: var(--paper); border: 1px solid var(--line); color: var(--ink);
-    border-top-left-radius: 4px;
+    border-top-left-radius: 4px; white-space: normal;
   }
   .lg-assist-bubble.user {
     background: rgba(108,92,224,0.10); border: 1px solid rgba(108,92,224,0.22);
     color: var(--ink); align-self: flex-end; border-top-right-radius: 4px;
+    white-space: pre-wrap;
   }
-  .lg-assist-bubble.pending { color: var(--ink-soft); font-style: italic; }
+  .lg-assist-bubble.pending { color: var(--ink-soft); font-style: italic; white-space: pre-wrap; }
+  .lg-assist-bubble.bot p { margin: 0 0 8px; }
+  .lg-assist-bubble.bot p:last-child { margin-bottom: 0; }
+  .lg-assist-section {
+    margin: 0 0 10px; padding: 0 0 10px;
+    border-bottom: 1px solid var(--paper-line);
+  }
+  .lg-assist-section:last-child { margin: 0; padding: 0; border: 0; }
+  .lg-assist-kicker {
+    margin: 0 0 4px;
+    font-size: 10px; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--accent);
+  }
+  .lg-assist-bubble.bot ol, .lg-assist-bubble.bot ul {
+    margin: 0 0 8px; padding-left: 1.15em;
+  }
+  .lg-assist-bubble.bot li { margin: 0 0 4px; }
+  .lg-assist-bubble.bot li:last-child { margin-bottom: 0; }
+  .lg-assist-bubble.bot strong { font-weight: 650; }
   .lg-assist-chips {
     display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 8px;
   }
@@ -1361,6 +1380,62 @@ function escapeHtml(s) {
 
 function inlineMarkdown(s) {
   return escapeHtml(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+
+function formatAssistBody(chunk) {
+  const ls = String(chunk || '').split('\n').map(l => l.trim()).filter(Boolean);
+  if (!ls.length) return '';
+  if (ls.every(l => /^\d+[\.\)]\s+/.test(l))) {
+    return '<ol>' + ls.map(l =>
+      '<li>' + inlineMarkdown(l.replace(/^\d+[\.\)]\s+/, '')) + '</li>'
+    ).join('') + '</ol>';
+  }
+  if (ls.every(l => /^[-*•]\s+/.test(l))) {
+    return '<ul>' + ls.map(l =>
+      '<li>' + inlineMarkdown(l.replace(/^[-*•]\s+/, '')) + '</li>'
+    ).join('') + '</ul>';
+  }
+  return '<p>' + inlineMarkdown(ls.join(' ')) + '</p>';
+}
+
+function formatAssistHtml(text) {
+  const raw = String(text || '').replace(/\r\n/g, '\n').trim();
+  if (!raw) return '';
+  const lines = raw.split('\n');
+  const chunks = [];
+  let buf = [];
+  function flush() {
+    if (buf.length) {
+      chunks.push(buf.join('\n'));
+      buf = [];
+    }
+  }
+  lines.forEach(line => {
+    const t = line.trim();
+    if (/^\*\*[^*]{1,40}\*\*\s*:/.test(t) && buf.length) flush();
+    if (!t) {
+      flush();
+      return;
+    }
+    buf.push(t);
+  });
+  flush();
+
+  let html = '';
+  chunks.forEach(chunk => {
+    const ls = chunk.split('\n');
+    const sec = ls[0].match(/^\*\*([^*]+)\*\*\s*:?\s*(.*)$/);
+    if (sec && sec[1].trim().length < 40) {
+      const rest = [sec[2]].concat(ls.slice(1)).join('\n').trim();
+      html += '<div class="lg-assist-section">';
+      html += '<p class="lg-assist-kicker">' + escapeHtml(sec[1].trim().replace(/:$/, '')) + '</p>';
+      html += formatAssistBody(rest);
+      html += '</div>';
+      return;
+    }
+    html += formatAssistBody(chunk);
+  });
+  return html;
 }
 
 function parseCritiqueBullet(raw) {
@@ -5799,7 +5874,8 @@ function renderAssistant() {
   assistantMessages.forEach(m => {
     const el = document.createElement('div');
     el.className = 'lg-assist-bubble ' + (m.role === 'user' ? 'user' : 'bot') + (m.pending ? ' pending' : '');
-    el.textContent = m.text;
+    if (m.role === 'assistant' && !m.pending) el.innerHTML = formatAssistHtml(m.text);
+    else el.textContent = m.text;
     box.appendChild(el);
   });
   box.scrollTop = box.scrollHeight;
@@ -5821,7 +5897,7 @@ function toggleAssistant(force) {
   if (assistantOpen && !assistantMessages.length) {
     assistantMessages.push({
       role: 'assistant',
-      text: 'I can walk any flow on this canvas — ReAct, Reflexion, RAG, supervisor, or a custom graph. Ask which template fits, or what to do next.\n\n' + localCoachReply('Which template fits this job, and how do I build it step by step?'),
+      text: 'Are you ready to create your best graph design?\n\nI can help — ask which template fits, or what to do next.',
     });
     renderAssistant();
   }
