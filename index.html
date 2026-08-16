@@ -3755,6 +3755,7 @@ function resetAll() {
   btn.textContent = 'reset';
   nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = []; schemas = []; graphOutputs = [];
   selected.clear();
+  coachPattern = '';
   const problem = document.getElementById('problem-desc');
   if (problem) problem.value = '';
   ensureStartNode();
@@ -3794,6 +3795,7 @@ function toggleMenu(id, ev) {
 
 function pickTemplate(key) {
   closeMenus();
+  if (key && FLOW_GUIDES[key]) coachPattern = key;
   loadTemplate(key); // additive: stacks onto the current canvas
 }
 
@@ -5854,7 +5856,12 @@ function isAdvanceQuestion(q) {
 
 function isStuckQuestion(q) {
   const s = String(q || '').trim().toLowerCase();
-  return /stuck|help me|ayudame|ay[uú]dame|no me sale|no estoy seguro|how do i|exact|clicks|completar|fill the/.test(s);
+  return /i am stuck|stuck on this|no me sale|exact clicks|fill the form|ayudame con este|ayúdame con este|walk me through the exact/.test(s);
+}
+
+function isAskingNames(q) {
+  const s = String(q || '').trim().toLowerCase();
+  return /names of the actions|name of the actions|what (are|is) the actions|what actions|which actions|qu[eé] (nodos|cajas|actions|acciones)|nombres de|for this specific case|what (do i|should i) (create|add|draw|name)|tell (me )?(what|the names)|the actions for|what are the (boxes|nodes|roles)|which (boxes|nodes|roles)/.test(s);
 }
 
 function isWhyQuestion(q) {
@@ -5869,17 +5876,317 @@ function canvasBlob(g) {
   return problem + ' ' + labels + ' ' + schemas;
 }
 
+function sessionBlob(question) {
+  const chats = (typeof assistantMessages !== 'undefined' && Array.isArray(assistantMessages))
+    ? assistantMessages.filter(m => !m.pending).map(m => m.text || '').join(' ')
+    : '';
+  return String(question || '') + ' ' + chats;
+}
+
+const FLOW_GUIDES = {
+  reflexion: {
+    keys: ['reflexion', 'reflexionar'],
+    name: 'Reflexion',
+    whyJob: 'A single LLM shot hallucinates and does not correct itself. Reflexion exists so the model critiques, fetches evidence, and rewrites — a cycle of improvement, not more boxes.',
+    doJob: [
+      'In “problem to solve”, write the work: given a question, return an answer grounded in evidence, improved at least once.',
+      'In your head (not on the canvas yet): propose → critique → investigate → revise → did we gather enough evidence?',
+    ],
+    whyRoles: 'Each role exists because the previous one fails at something. A critique without search does not improve the answer; search without revise is theater.',
+    roles: [
+      { kind: 'action', name: 'draft', why: 'first hypothesis; without it there is nothing to critique' },
+      { kind: 'action', name: 'execute_tools', why: 'fetch outside evidence; the critique alone changes nothing' },
+      { kind: 'action', name: 'revise', why: 'rewrite WITH that evidence' },
+      { kind: 'router', name: 'event_loop', why: 'cut when the evidence budget is spent, not when the answer “looks good”' },
+      { kind: 'end', name: 'end', why: 'the run has to stop; end does not compute' },
+    ],
+    wire: 'start → draft → execute_tools → revise → event_loop. From event_loop: no → execute_tools, yes → end.',
+  },
+  reflection: {
+    keys: ['reflection'],
+    name: 'Reflection',
+    whyJob: 'The model can judge its own draft without leaving the machine. This pattern has no web search — only generate, critique, refine.',
+    doJob: [
+      'In “problem to solve”, write what must be drafted and what “good enough” means.',
+      'Cycle in your head: generate → critique → refine, until OK or a max of iterations.',
+    ],
+    whyRoles: 'Critique without refine is a comment. Refine without a stop is an infinite loop. There is no search box here — that would be Reflexion.',
+    roles: [
+      { kind: 'action', name: 'generate', why: 'first draft' },
+      { kind: 'action', name: 'critique', why: 'judge what is missing or wrong' },
+      { kind: 'action', name: 'refine', why: 'rewrite from that judgment' },
+      { kind: 'router', name: 'enough', why: 'OK or max iterations' },
+      { kind: 'end', name: 'end', why: 'stop' },
+    ],
+    wire: 'start → generate → critique → refine → enough. Continue → generate (or refine). Stop → end.',
+  },
+  react: {
+    keys: ['react agent', 'react'],
+    name: 'ReAct',
+    whyJob: 'The model should think, use a tool when it lacks a fact, then think again — until it can answer without a tool call.',
+    doJob: [
+      'In “problem to solve”, write the question the agent must answer and which tools it may use.',
+      'Cycle: think → need a tool? → run it → think again.',
+    ],
+    whyRoles: 'If the LLM and the tool are the same box, it will “search” from memory. The conditional is “did it request a tool?”, not “is the answer good?”.',
+    roles: [
+      { kind: 'action', name: 'agent', why: 'LLM that thinks and may request a tool' },
+      { kind: 'router', name: 'tools_condition', why: 'tool requested? yes / no' },
+      { kind: 'action', name: 'tools', why: 'run the requested tool and return the result' },
+      { kind: 'end', name: 'end', why: 'stop when the model answers without a tool call' },
+    ],
+    wire: 'start → agent → tools_condition. Yes → tools → agent. No → end.',
+  },
+  tool_calling: {
+    keys: ['tool-calling', 'tool calling', 'tool_calling'],
+    name: 'Tool-calling',
+    whyJob: 'Same idea as ReAct: the model either calls a tool or finishes. The graph must make both outcomes possible.',
+    doJob: [
+      'Write the job and which tools exist.',
+      'Cycle: model → tools if needed → model, until a final answer.',
+    ],
+    whyRoles: 'The LLM chooses; the tool executes. A conditional separates “call a tool” from “done”.',
+    roles: [
+      { kind: 'action', name: 'llm', why: 'chooses a tool or a final answer' },
+      { kind: 'router', name: 'has_tool_call', why: 'did this shot request a tool?' },
+      { kind: 'action', name: 'tools', why: 'execute and append results' },
+      { kind: 'end', name: 'end', why: 'final answer, no tool call' },
+    ],
+    wire: 'start → llm → has_tool_call. Yes → tools → llm. No → end.',
+  },
+  retry: {
+    keys: ['retry', 'repair'],
+    name: 'Retry / repair',
+    whyJob: 'Work can fail. The design is a budget of attempts, not “try forever until it feels right”.',
+    doJob: [
+      'Write what is attempted and what “failed” means.',
+      'Cycle: try → evaluate → retry or end.',
+    ],
+    whyRoles: 'Evaluate must be countable (attempts vs max). Without a cap the graph never ends.',
+    roles: [
+      { kind: 'action', name: 'try', why: 'do the work' },
+      { kind: 'router', name: 'evaluate', why: 'failed and attempts left? retry : end' },
+      { kind: 'end', name: 'end', why: 'success or budget spent' },
+    ],
+    wire: 'start → try → evaluate. Retry → try. Stop → end.',
+  },
+  plan_execute: {
+    keys: ['plan-and-execute', 'plan and execute', 'plan_execute', 'plan and'],
+    name: 'Plan-and-execute',
+    whyJob: 'A planner writes steps[]; an executor runs one step at a time. The loop is “is the plan done?”, not another brainstorm.',
+    doJob: [
+      'Write the kind of plan (steps toward what outcome).',
+      'Cycle: create plan → execute current step → more steps? → execute or end.',
+    ],
+    whyRoles: 'If plan and execute are one LLM shot, you cannot see or retry a single step.',
+    roles: [
+      { kind: 'action', name: 'planner', why: 'writes the list of steps' },
+      { kind: 'action', name: 'executor', why: 'runs the current step and advances the index' },
+      { kind: 'router', name: 'more_steps', why: 'plan index vs length' },
+      { kind: 'end', name: 'end', why: 'plan finished' },
+    ],
+    wire: 'start → planner → executor → more_steps. Yes → executor. No → end.',
+  },
+  rag: {
+    keys: ['rag', 'retriev'],
+    name: 'RAG',
+    whyJob: 'The model should answer from retrieved context, not from memory. If retrieval is weak, you need a fallback, not a confident hallucination.',
+    doJob: [
+      'Write what corpus you search and what the user should get.',
+      'Cycle: retrieve → enough context? → generate or fallback.',
+    ],
+    whyRoles: 'Retrieve is a tool/function. Generate is an LLM. The conditional is quality of context, not “is the prose nice?”.',
+    roles: [
+      { kind: 'action', name: 'retrieve', why: 'fetch passages from the corpus' },
+      { kind: 'router', name: 'enough_context', why: 'context strong enough to answer?' },
+      { kind: 'action', name: 'generate', why: 'answer from those passages' },
+      { kind: 'action', name: 'fallback', why: 'refuse or broaden search if retrieval is weak' },
+      { kind: 'end', name: 'end', why: 'stop after generate or fallback' },
+    ],
+    wire: 'start → retrieve → enough_context. Yes → generate → end. No → fallback → end.',
+  },
+  supervisor: {
+    keys: ['supervisor', 'worker'],
+    name: 'Supervisor + workers',
+    whyJob: 'One router assigns work to specialists. The specialists do not decide who speaks next — the supervisor does.',
+    doJob: [
+      'Write the job and who the specialists are (e.g. researcher vs writer).',
+      'Cycle: supervisor chooses a worker → worker acts → supervisor again, until end.',
+    ],
+    whyRoles: 'If a worker routes to another worker, you no longer have a supervisor — you have a tangle.',
+    roles: [
+      { kind: 'router', name: 'supervisor', why: 'who should act, or are we done?' },
+      { kind: 'action', name: 'worker_a', why: 'first specialist' },
+      { kind: 'action', name: 'worker_b', why: 'second specialist' },
+      { kind: 'end', name: 'end', why: 'supervisor chooses stop' },
+    ],
+    wire: 'start → supervisor → worker_a | worker_b → supervisor. Supervisor → end when the job is done.',
+  },
+  map_reduce: {
+    keys: ['map-reduce', 'map_reduce', 'map reduce'],
+    name: 'Map-reduce',
+    whyJob: 'Split work into chunks, run the same worker on each, merge. Fan-out then fan-in — usually no loop.',
+    doJob: [
+      'Write what is split and what the merge must produce.',
+      'Flow: split → workers → merge.',
+    ],
+    whyRoles: 'If merge happens inside each worker, you never get a single result. Split must write chunks the workers can read.',
+    roles: [
+      { kind: 'action', name: 'split', why: 'writes the chunks' },
+      { kind: 'action', name: 'worker', why: 'runs on one chunk (fan-out in code)' },
+      { kind: 'action', name: 'merge', why: 'combines partials into one result' },
+      { kind: 'end', name: 'end', why: 'after merge' },
+    ],
+    wire: 'start → split → worker → merge → end.',
+  },
+  hitl: {
+    keys: ['human-in-the-loop', 'human in the loop', 'hitl', 'approve'],
+    name: 'Human-in-the-loop',
+    whyJob: 'Some actions need a person. The conditional is approve/reject, not a model guess.',
+    doJob: [
+      'Write what the human is asked to approve.',
+      'Cycle: draft → human → continue or revise.',
+    ],
+    whyRoles: 'Reject must go back to draft. Approve goes forward. Do not hide the human inside an LLM node.',
+    roles: [
+      { kind: 'action', name: 'draft', why: 'propose the action' },
+      { kind: 'router', name: 'human', why: 'approve or reject' },
+      { kind: 'action', name: 'revise', why: 'change the proposal after reject' },
+      { kind: 'end', name: 'end', why: 'after approve' },
+    ],
+    wire: 'start → draft → human. Approve → end. Reject → revise → draft (or human).',
+  },
+  guardrails: {
+    keys: ['guardrail', 'guard rails', 'validate input'],
+    name: 'Guardrails',
+    whyJob: 'Refuse or repair bad input before the agent, and bad output before the user.',
+    doJob: [
+      'Write what “bad input” and “bad output” mean for this job.',
+      'Flow: validate in → agent → check out.',
+    ],
+    whyRoles: 'A check after the agent that cannot fail is decoration. Both gates need a real refuse/repair path.',
+    roles: [
+      { kind: 'action', name: 'validate_in', why: 'refuse or repair the incoming request' },
+      { kind: 'action', name: 'agent', why: 'the work itself' },
+      { kind: 'action', name: 'check_out', why: 'refuse or repair the outgoing answer' },
+      { kind: 'end', name: 'end', why: 'only after the output gate passes' },
+    ],
+    wire: 'start → validate_in → agent → check_out → end (repair paths loop back as needed).',
+  },
+  simple: {
+    keys: ['simple branch', 'simple'],
+    name: 'Simple branch',
+    whyJob: 'One decision, two paths. If you cannot say what each path produces, the fork is decoration.',
+    doJob: [
+      'Write what comes in and what each path should produce.',
+      'Still no boxes until that sentence is clear.',
+    ],
+    whyRoles: 'The conditional is the design. Each path exists because the other outcome needs different work.',
+    roles: [
+      { kind: 'router', name: 'decide', why: 'the fork' },
+      { kind: 'action', name: 'path_a', why: 'work for one outcome' },
+      { kind: 'action', name: 'path_b', why: 'work for the other' },
+      { kind: 'end', name: 'end', why: 'both paths stop' },
+    ],
+    wire: 'start → decide → path_a | path_b → end.',
+  },
+};
+
+const FLOW_MATCH_ORDER = ['reflexion', 'reflection', 'plan_execute', 'tool_calling', 'map_reduce', 'supervisor', 'guardrails', 'hitl', 'retry', 'rag', 'react', 'simple'];
+
+function textHasKey(hay, key) {
+  const k = String(key || '').toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '[\\s_-]+');
+  return new RegExp('(?:^|[^a-z0-9])' + k + '(?:$|[^a-z0-9])').test(String(hay || '').toLowerCase());
+}
+
+function matchFlowId(text) {
+  const s = String(text || '').toLowerCase();
+  for (let i = 0; i < FLOW_MATCH_ORDER.length; i++) {
+    const id = FLOW_MATCH_ORDER[i];
+    const guide = FLOW_GUIDES[id];
+    if (guide && (guide.keys || []).some(k => textHasKey(s, k))) return id;
+  }
+  return '';
+}
+
+let coachPattern = '';
+
+function inferCoachPattern(g, question) {
+  const explicit = matchFlowId(question);
+  if (explicit) {
+    coachPattern = explicit;
+    return coachPattern;
+  }
+  const fromCanvas = matchFlowId(canvasBlob(g));
+  if (fromCanvas) {
+    coachPattern = fromCanvas;
+    return coachPattern;
+  }
+  if (looksReflexion(g)) {
+    coachPattern = 'reflexion';
+    return coachPattern;
+  }
+  if (looksReact(g)) {
+    coachPattern = 'react';
+    return coachPattern;
+  }
+  if (coachPattern) return coachPattern;
+  const fromSession = matchFlowId(sessionBlob(question));
+  if (fromSession) {
+    coachPattern = fromSession;
+    return coachPattern;
+  }
+  return '';
+}
+
 function looksReflexion(g) {
   const blob = canvasBlob(g);
-  return /reflexion/.test(blob)
+  return matchFlowId(blob) === 'reflexion'
     || /answerquestion|reviseanswer/.test(blob)
-    || /(draft|revise|execute_tools|event_loop)/.test(blob)
-    || (/(propos|hypothes)/.test(blob) && /(investig|search|tavily)/.test(blob) && /revis/.test(blob));
+    || /(draft|revise|execute_tools|event_loop)/.test(blob);
 }
 
 function looksReact(g) {
   const blob = canvasBlob(g);
-  return /\breact\b/.test(blob) || /tools_condition/.test(blob);
+  return matchFlowId(blob) === 'react' || /tools_condition/.test(blob);
+}
+
+function isPlaceholderNode(n) {
+  return /^new (action|conditional|node)/i.test(String((n && n.label) || '').trim());
+}
+
+function flowSketchIncomplete(g, guide) {
+  const actions = (g.nodes || []).filter(n => n.type === 'action' && !isPlaceholderNode(n));
+  const routers = (g.nodes || []).filter(n => n.type === 'router' && !isPlaceholderNode(n));
+  const ends = (g.nodes || []).filter(n => n.type === 'end');
+  if (!guide) return actions.length === 0;
+  const needA = (guide.roles || []).filter(r => r.kind === 'action').length;
+  const needR = (guide.roles || []).filter(r => r.kind === 'router').length;
+  const needE = (guide.roles || []).some(r => r.kind === 'end') ? 1 : 0;
+  return actions.length < needA || routers.length < needR || (needE && !ends.length);
+}
+
+function namesLesson(guide, extra) {
+  if (!guide) {
+    return lesson('roles', 2, 'Roles from the job',
+      'Each box is a role, not a decoration. Name who acts from YOUR job — do not copy Reflexion (or any template) unless that is the pattern you chose.',
+      [
+        'From the job, name 2–4 roles (who acts). Create one + action per role and rename it. Do not leave the label as “new action”.',
+        'If the job loops or branches, add + conditional with two labeled exits, and + end.',
+        'Connect start → first role → … → end. If you cannot say what one box hands the next, do not draw more.',
+      ],
+      extra);
+  }
+  const actionNames = (guide.roles || []).filter(r => r.kind === 'action').map(r => '**' + r.name + '** (' + r.why + ')').join('; ');
+  const extraBits = (guide.roles || []).filter(r => r.kind === 'router' || r.kind === 'end').map(r => '**' + r.name + '**' + (r.kind === 'router' ? ' (+ conditional)' : '') + ' — ' + r.why).join('; ');
+  return lesson('roles', 2, 'Boxes for ' + guide.name,
+    guide.whyRoles,
+    [
+      'Create these actions and rename them: ' + actionNames + '.',
+      extraBits ? ('Also add: ' + extraBits + '.') : 'Add + end so the run can stop.',
+      'Wire: ' + guide.wire + ' Skip schemas and tools until the loop reads out loud.',
+    ],
+    extra);
 }
 
 function stateKey(g, name) {
@@ -5953,50 +6260,45 @@ function reflexionRoles(g) {
 
 function detectLesson(g, question) {
   const stuck = isStuckQuestion(question);
+  const askingNames = isAskingNames(question);
   const actions = (g.nodes || []).filter(n => n.type === 'action');
   const routers = (g.nodes || []).filter(n => n.type === 'router');
   const ends = (g.nodes || []).filter(n => n.type === 'end');
   const schemas = g.schemas || [];
   const filledSchemas = schemas.filter(s => schemaFields(s).length > 0);
   const problem = (g.problem || '').trim();
-  const reflexion = looksReflexion(g) || /reflexion/.test(String(question || '').toLowerCase());
-  const pattern = reflexion ? 'reflexion' : (looksReact(g) ? 'react' : '');
+  const pattern = inferCoachPattern(g, question);
+  const guide = pattern ? FLOW_GUIDES[pattern] : null;
+  const reflexion = pattern === 'reflexion';
   const extra = { stuck: stuck, pattern: pattern };
 
+  if (askingNames) {
+    return namesLesson(guide, extra);
+  }
+
   if (!problem) {
+    if (guide) {
+      return lesson('job', 1, 'The job, not the graph',
+        guide.whyJob,
+        (guide.doJob || []).concat(['Do not add schemas, state keys, or extra nodes in this step.']),
+        extra);
+    }
     return lesson('job', 1, 'The job, not the graph',
-      reflexion
-        ? 'A single LLM shot hallucinates and does not correct itself. Reflexion exists so the model critiques, fetches evidence, and rewrites. That is a cycle of improvement, not more boxes.'
-        : 'If you cannot say what enters, what the user should get, and what must improve, the diagram will be decoration. The graph comes last.',
-      reflexion
-        ? [
-            'In “problem to solve”, write the work in your words: given a question, return an answer grounded in evidence, improved at least once.',
-            'In your head (not on the canvas yet): propose → critique → investigate → revise → did we gather enough evidence?',
-            'Do not add schemas, state keys, or nodes in this step.',
-          ]
-        : [
-            'Write the job in “problem to solve”: what comes in, what the user should get, and what the system must improve or decide.',
-            'Name the cycle in one sentence (retry? retrieve then generate? critique and search?). Still no boxes.',
-            'Do not copy a template recipe of node names.',
-          ],
+      'If you cannot say what enters, what the user should get, and what must improve, the diagram will be decoration. The graph comes last. This coach works for any flow — ReAct, RAG, supervisor, Reflexion, or a mix you invent.',
+      [
+        'Write the job in “problem to solve”: what comes in, what the user should get, and what the system must improve or decide.',
+        'Name the cycle in one sentence (retry? retrieve then generate? critique and search? route to specialists?). Still no boxes.',
+        'If you already know the pattern, say its name (ReAct, RAG, Reflexion, …) and we will walk that roster — not a different one.',
+      ],
       extra);
   }
 
+  if (askingNames || flowSketchIncomplete(g, guide) && (actions.every(isPlaceholderNode) || actions.length === 0 || (guide && actions.filter(n => !isPlaceholderNode(n)).length < (guide.roles || []).filter(r => r.kind === 'action').length))) {
+    return namesLesson(guide, extra);
+  }
+
   if (actions.length === 0) {
-    return lesson('roles', 2, 'Roles and arrows',
-      'Each role exists because the previous one fails at something. Until you can say who hands what to whom, schemas are a guess.',
-      reflexion
-        ? [
-            'Four roles: propose a first hypothesis; investigate (the critique alone changes nothing); revise with that evidence; decide when the evidence budget is spent.',
-            'Draw it: start → propose → investigate → revise → a conditional. From the conditional, continue → investigate; stop → end.',
-            'Label the boxes as roles, not as library names. Skip schemas and tools for now.',
-          ]
-        : [
-            'Draw the roles as action boxes and connect them. If the job loops, add a conditional with two labeled exits and an end.',
-            'Double-click each action and write the effect: one sentence of what that role does to the work.',
-            'Still no schemas. If you cannot say out loud what one box hands the next, do not draw more.',
-          ],
-      extra);
+    return namesLesson(guide, extra);
   }
 
   const missingEffect = actions.find(n => !(n.effect || '').trim());
@@ -6224,8 +6526,8 @@ function detectLesson(g, question) {
   return lesson('done', 12, 'The design is the contract',
     'Job → loop → contracts → memory → each role wired → stop → output. Generate code should translate this canvas, not invent fields.',
     [
-      'Sanity: proposer LLM + proposal schema; researcher tool handling both schemas; reviser LLM + revision schema; stop = N tool rounds; output = user-facing fields only.',
-      'When that matches, Export → Generate code. Read the files against this diagram. If the code adds a field the canvas does not have, the dictionary is still incomplete.',
+      'Sanity against YOUR pattern: every role is named and wired, LLM nodes have a contract if they must return a shape, tools map args from state, the stop is countable, OUTPUT is what the user should see.',
+      'When that matches, Export → Generate code. If the code adds a field the canvas does not have, the dictionary is still incomplete.',
     ],
     Object.assign({}, extra, { then: 'Ask if you want a review of a specific node, or generate code.' }));
 }
@@ -6271,7 +6573,7 @@ function matchTemplateGuide(question) {
 function localCoachReply(question) {
   const g = compactGraphForCoach();
   const q = String(question || '');
-  if (/template|which pattern|what (should|do) i (use|build|start)/i.test(q) && !looksReflexion(g)) {
+  if (/template|which pattern|what (should|do) i (use|build|start)/i.test(q) && !inferCoachPattern(g, q)) {
     const tmpl = matchTemplateGuide(q);
     if (tmpl) {
       return '**Why:** Pick the pattern from the job, then we build it one step at a time — not by dumping the template.\n\n**Do this:**\n1. ' + tmpl.name + ': ' + tmpl.flow + '.\n2. ' + tmpl.next + '\n3. Write that job in “problem to solve” if it is still empty.\n\n**Then:** When that is done, say next.';
