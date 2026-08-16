@@ -87,6 +87,61 @@
     display: flex; flex-direction: column; gap: 10px;
     max-height: 100%; overflow-y: auto;
   }
+  .lg-assist {
+    display: none;
+    width: 300px; flex-shrink: 0;
+    flex-direction: column; min-height: 0; max-height: 100%;
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    overflow: hidden;
+  }
+  .lg-body.assist-open .lg-assist { display: flex; }
+  body.assist-open .lg-zoom-glass { right: 336px; }
+  .lg-assist-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+    padding: 12px 12px 8px; border-bottom: 1px solid var(--paper-line);
+  }
+  .lg-assist-head h3 { margin: 0; }
+  .lg-assist-eyebrow {
+    font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 2px;
+  }
+  .lg-assist-msgs {
+    flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .lg-assist-bubble {
+    font-size: 12.5px; line-height: 1.45; padding: 8px 10px; border-radius: 10px;
+    max-width: 100%; white-space: pre-wrap; word-break: break-word;
+  }
+  .lg-assist-bubble.bot {
+    background: var(--paper); border: 1px solid var(--line); color: var(--ink);
+    border-top-left-radius: 4px;
+  }
+  .lg-assist-bubble.user {
+    background: rgba(108,92,224,0.10); border: 1px solid rgba(108,92,224,0.22);
+    color: var(--ink); align-self: flex-end; border-top-right-radius: 4px;
+  }
+  .lg-assist-bubble.pending { color: var(--ink-soft); font-style: italic; }
+  .lg-assist-chips {
+    display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 8px;
+  }
+  .lg-assist-chips button {
+    font-family: inherit; font-size: 11px; padding: 4px 8px; border-radius: 999px;
+    border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .lg-assist-chips button:hover { color: var(--accent); border-color: var(--accent); background: #fff; }
+  .lg-assist-compose {
+    display: flex; gap: 6px; padding: 8px 12px 12px; border-top: 1px solid var(--paper-line);
+    align-items: flex-end;
+  }
+  .lg-assist-compose textarea {
+    flex: 1; min-width: 0; min-height: 44px; max-height: 96px; resize: none;
+    font-family: inherit; font-size: 12.5px; line-height: 1.4;
+    padding: 7px 8px; border: 1px solid var(--line-strong); border-radius: 8px;
+    background: var(--paper);
+  }
+  .lg-assist-compose .lg-btn { flex-shrink: 0; }
   .lg-panel {
     background: var(--card); border: 1px solid var(--line); border-radius: 10px;
     padding: 12px;
@@ -208,15 +263,38 @@
   .lg-log .entry:last-child { border-bottom: none; }
   .lg-log .step-n { color: var(--accent); font-weight: 600; }
   .lg-warn { color: #B84B3E; font-size: 12.5px; margin-top: 4px; }
-  .lg-canvas-outer {
+  .lg-canvas-stage {
     flex: 1; min-width: 0; min-height: 520px;
     height: auto; align-self: stretch;
+    position: relative;
+    display: flex;
+  }
+  .lg-canvas-outer {
+    flex: 1; min-width: 0; min-height: 0;
+    height: auto;
     overflow: auto;
     border: 1px solid var(--line); border-radius: 10px;
     background-color: var(--paper);
     background-image: radial-gradient(var(--line) 1px, transparent 1px);
     background-size: 22px 22px;
     position: relative;
+  }
+  .lg-assist-fab {
+    position: absolute; top: 14px; right: 14px; z-index: 70;
+    width: 48px; height: 48px; padding: 0; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.7);
+    background: var(--accent); color: #fff;
+    box-shadow: 0 4px 18px rgba(108, 92, 224, 0.35);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform .12s ease, background .12s ease, box-shadow .12s ease;
+  }
+  .lg-assist-fab svg { width: 22px; height: 22px; display: block; }
+  .lg-assist-fab:hover { transform: scale(1.06); background: #5b4cc4; }
+  .lg-assist-fab.active {
+    background: #fff; color: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 4px 16px rgba(30,20,60,0.16);
   }
   .lg-canvas {
     position: relative; width: 900px; height: 640px;
@@ -681,7 +759,7 @@
     </div>
   </div>
 
-  <div class="lg-body">
+  <div class="lg-body" id="lg-body">
     <div class="lg-side">
       <div class="lg-panel">
         <h3>problem to solve</h3>
@@ -724,6 +802,7 @@
       </div>
     </div>
 
+    <div class="lg-canvas-stage">
     <div class="lg-canvas-outer" id="canvas-outer">
       <aside id="critique-panel" class="lg-critique-panel" hidden>
         <div class="lg-critique-head">
@@ -742,6 +821,31 @@
         <div id="inline-editor" class="lg-inline-editor" style="display:none;"></div>
       </div>
     </div>
+    <button type="button" class="lg-assist-fab" id="assist-btn" onclick="toggleAssistant()" title="Design assistant" aria-label="Design assistant" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+    </button>
+    </div>
+    <aside class="lg-assist" id="assist-panel" aria-label="Design assistant">
+      <div class="lg-assist-head">
+        <div>
+          <div class="lg-assist-eyebrow">coach</div>
+          <h3>assistant</h3>
+        </div>
+        <button type="button" class="lg-critique-close" onclick="toggleAssistant(false)" aria-label="Close assistant">×</button>
+      </div>
+      <div class="lg-assist-msgs" id="assist-msgs"></div>
+      <div class="lg-assist-chips" id="assist-chips">
+        <button type="button" onclick="askAssistant('What is still missing to complete this system?')">What is missing?</button>
+        <button type="button" onclick="askAssistant('Which template fits this job, and how do I build it step by step?')">Which template?</button>
+        <button type="button" onclick="askAssistant('Walk me through the next step to finish the graph I have.')">Next step</button>
+      </div>
+      <form class="lg-assist-compose" onsubmit="sendAssistant(event)">
+        <textarea id="assist-input" placeholder="Ask how to finish this graph…" rows="2" onkeydown="assistKeydown(event)"></textarea>
+        <button type="submit" class="lg-btn primary" id="assist-send">send</button>
+      </form>
+    </aside>
   </div>
   <div class="lg-zoom-glass" aria-label="Canvas zoom">
     <button type="button" onclick="zoomBy(0.1)" title="zoom in">+</button>
@@ -1770,7 +1874,7 @@ function onCanvasMouseDown(ev) {
   if (mode === 'delete' || edgeDraw) return;
   if (ev.button !== 0) return;
   const t = ev.target;
-  if (t.closest && (t.closest('.lg-node') || t.closest('.lg-handle') || t.closest('.lg-zoom-glass') || t.closest('.lg-critique-panel') || t.closest('.lg-inline-editor'))) return;
+  if (t.closest && (t.closest('.lg-node') || t.closest('.lg-handle') || t.closest('.lg-zoom-glass') || t.closest('.lg-assist-fab') || t.closest('.lg-critique-panel') || t.closest('.lg-assist') || t.closest('.lg-inline-editor'))) return;
   // Ignore edge hit targets (delete/label) — still allow empty canvas / svg background
   if (t.closest && t.closest('.lg-edge-hit, .lg-edge-delete, .lg-edge-label')) return;
 
@@ -5502,6 +5606,306 @@ function showPromptFallback(append) {
 function showResults(html) {
   document.getElementById('results-panel').style.display = 'block';
   document.getElementById('results-content').innerHTML = html;
+}
+
+const ASSISTANT_URL = '/api/assistant';
+let assistantOpen = false;
+let assistantBusy = false;
+const assistantMessages = [];
+
+function compactGraphForCoach() {
+  const g = serializeGraph();
+  const nameOf = {};
+  (g.nodes || []).forEach(n => { nameOf[n.id] = n.label || n.id; });
+  const schemaName = {};
+  (g.schemas || []).forEach(s => { schemaName[s.id] = s.name || s.id; });
+  return {
+    problem: g.problem || '',
+    state: (g.stateVars || []).map(v => ({ key: v.key, type: v.type, val: v.val })),
+    schemas: (g.schemas || []).map(s => ({
+      name: s.name,
+      extends: s.extendsId ? (schemaName[s.extendsId] || s.extendsId) : '',
+      fields: (s.fields || []).map(f => ({ key: f.key, type: f.type })),
+    })),
+    outputs: (g.outputs || []).map(o => ({
+      key: o.key,
+      schema: schemaName[o.schemaId] || o.schemaId,
+      field: o.field,
+    })),
+    nodes: (g.nodes || []).map(n => {
+      const d = n.detail || {};
+      const row = { type: n.type, label: n.label, effect: n.effect || '' };
+      if (n.type === 'action') {
+        row.kind = d.kind || 'function';
+        if (d.kind === 'llm') {
+          row.outputSchema = d.outputSchemaId ? (schemaName[d.outputSchemaId] || d.outputSchemaId) : '';
+          row.bindTools = d.bindTools !== false;
+        }
+        if (d.kind === 'tool') {
+          row.tool = d.tool || d.toolId || '';
+          row.toolArgs = d.toolArgs || [];
+          row.handles = (d.handlesSchemaIds || []).map(id => schemaName[id] || id);
+        }
+        row.reads = d.reads || [];
+        row.writes = (d.writes || []).map(w => w.key + ':' + w.op);
+      }
+      if (n.type === 'router') {
+        row.stopMode = d.stopMode || 'predicate';
+        row.stopMax = d.stopMax || '';
+        row.condition = d.condition || '';
+      }
+      return row;
+    }),
+    edges: (g.edges || []).map(e => ({
+      from: nameOf[e.from] || e.from,
+      to: nameOf[e.to] || e.to,
+      label: e.label || '',
+    })),
+  };
+}
+
+function coachGaps(g) {
+  const gaps = [];
+  const actions = (g.nodes || []).filter(n => n.type === 'action');
+  const routers = (g.nodes || []).filter(n => n.type === 'router');
+  const ends = (g.nodes || []).filter(n => n.type === 'end');
+  if (!(g.problem || '').trim()) {
+    gaps.push('Write the job in “problem to solve”. Without it you cannot tell if the graph is a complete solution.');
+  }
+  if (actions.length === 0) {
+    gaps.push('Add at least one action. A start node alone is not a system.');
+  }
+  const llmNodes = actions.filter(n => n.kind === 'llm');
+  const toolNodes = actions.filter(n => n.kind === 'tool');
+  llmNodes.forEach(n => {
+    if (!n.outputSchema) {
+      gaps.push('LLM node “' + n.label + '” has no output schema. Declare what it returns, or it is free text and the next step cannot read a contract.');
+    }
+  });
+  toolNodes.forEach(n => {
+    if (!n.tool) {
+      gaps.push('Tool node “' + n.label + '” has no tool picked.');
+    }
+    if (!(n.handles || []).length && llmNodes.some(l => l.outputSchema)) {
+      gaps.push('Tool node “' + n.label + '” does not say which LLM schemas it runs for. Tick “runs when LLM returns” only if the LLM returns a structured schema this tool should handle.');
+    }
+    (n.toolArgs || []).forEach(a => {
+      if (a.param && !a.fromKey) {
+        gaps.push('Tool arg “' + a.param + '” on “' + n.label + '” has no state key.');
+      }
+    });
+  });
+  if (!(g.outputs || []).length && llmNodes.length) {
+    gaps.push('Panel OUTPUT is empty. Say what the graph returns (fields of the last structured reply), not just that it ends.');
+  }
+  routers.forEach(n => {
+    const outs = (g.edges || []).filter(e => e.from === n.label);
+    if (outs.length < 2) {
+      gaps.push('Conditional “' + n.label + '” needs two outgoing branches (continue vs stop), each labeled.');
+    }
+  });
+  if (!ends.length && actions.length) {
+    gaps.push('Add an end node so the run has a place to stop.');
+  }
+  const connected = {};
+  (g.edges || []).forEach(e => { connected[e.from] = true; connected[e.to] = true; });
+  (g.nodes || []).forEach(n => {
+    if (n.type === 'start' || n.type === 'end') return;
+    if (!connected[n.label]) gaps.push('Node “' + n.label + '” is not connected.');
+  });
+  return gaps;
+}
+
+const CANVAS_TEMPLATES = [
+  { keys: ['simple', 'branch'], name: 'Simple branch', flow: 'start → decision → path A | path B', next: 'Draw one conditional with two labeled exits, then an action on each path and an end.' },
+  { keys: ['retry', 'repair'], name: 'Retry / repair', flow: 'try → evaluate → retry or end', next: 'Add an attempts counter in state. The conditional retries while attempts < max, otherwise end.' },
+  { keys: ['react'], name: 'ReAct', flow: 'agent → tools_condition → tools → agent', next: 'One LLM (agent) plus a tools node. The conditional asks: did the model request a tool? Yes → tools; no → end. Loop tools back to the agent.' },
+  { keys: ['reflection'], name: 'Reflection', flow: 'generate → critique → refine or finish', next: 'Two LLM nodes (draft and critique). Stop with a predicate or max iterations — no web search in this pattern.' },
+  { keys: ['reflexion'], name: 'Reflexion', flow: 'draft → execute_tools → revise → event_loop', next: 'Schemas first (proposal + revision that extends it). Draft LLM, tool that runs when those schemas return, revise LLM, stop after N tool rounds.' },
+  { keys: ['tool_calling', 'tool-calling', 'tool calling'], name: 'Tool-calling', flow: 'LLM ⇄ tools until a final answer', next: 'Same idea as ReAct: the model either calls a tool or finishes. Wire tool args from state or from the last model output.' },
+  { keys: ['plan', 'plan_execute', 'plan-and-execute'], name: 'Plan-and-execute', flow: 'create plan → execute step → more steps? → end', next: 'State needs a plan list and an index. Planner writes steps[]; executor runs one step and advances; conditional checks if the plan is done.' },
+  { keys: ['rag', 'retriev'], name: 'RAG', flow: 'retrieve → enough context? → generate | fallback', next: 'Retriever is a tool/function. Conditional on context quality. Generator is an LLM. Fallback if retrieval is weak.' },
+  { keys: ['supervisor', 'worker'], name: 'Supervisor + workers', flow: 'supervisor → worker A|B → supervisor → end', next: 'Supervisor is a router (who should act?). Each worker is an action. Loop back until the supervisor chooses end.' },
+  { keys: ['map', 'reduce', 'map_reduce'], name: 'Map-reduce', flow: 'split → workers → merge', next: 'Split writes chunks. Fan-out to worker actions. Merge combines partials. No loop required unless you retry a worker.' },
+  { keys: ['hitl', 'human', 'approve'], name: 'Human-in-the-loop', flow: 'draft → human approve/reject → continue or revise', next: 'The conditional is a human decision, not a model guess. Reject goes back to draft; approve goes forward.' },
+  { keys: ['guard', 'validat'], name: 'Guardrails', flow: 'validate input → agent → check output', next: 'Two checks around the agent: refuse/repair bad input, then refuse/repair bad output before end.' },
+];
+
+function matchTemplateGuide(question) {
+  const q = String(question || '').toLowerCase();
+  return CANVAS_TEMPLATES.find(t => t.keys.some(k => q.indexOf(k) >= 0)) || null;
+}
+
+function localCoachReply(question) {
+  const g = compactGraphForCoach();
+  const q = String(question || '').toLowerCase();
+  const gaps = coachGaps(g);
+  const lines = [];
+  const tmpl = matchTemplateGuide(question);
+  const emptyish = (g.nodes || []).filter(n => n.type !== 'start' && n.type !== 'end').length === 0;
+
+  if (tmpl) {
+    lines.push(tmpl.name + ': ' + tmpl.flow + '.');
+    lines.push(tmpl.next);
+    lines.push('Order: job → boxes and arrows → data on each edge → schemas only if an LLM must return a contract → state as memory → wire nodes → stop → OUTPUT.');
+    lines.push('Templates ▾ can drop this pattern on the canvas; you can still rebuild it by hand.');
+  } else if (/template|which pattern|what (should|do) i (use|build|start)/.test(q) || emptyish) {
+    lines.push('Pick a pattern from the job, then draw it (or load Templates ▾):');
+    lines.push('ReAct / tool-calling — model + tools until it can answer.');
+    lines.push('Reflection — self-critique, no search. Reflexion — critique + web search + revise.');
+    lines.push('RAG — retrieve then generate. Supervisor — route to specialist workers. Plan-and-execute — plan[] then run steps.');
+    lines.push('Retry, HITL, guardrails, map-reduce, or a simple branch if the job is smaller.');
+    lines.push('Next: write the job in “problem to solve”, then say which template you want and I will walk the next box.');
+  } else if (/tool|wire|tavily|search/.test(q)) {
+    lines.push('A tool node is not an LLM. It reads a state key and talks to the outside world.');
+    lines.push('Pick the catalog tool and map each arg to a state key. If an LLM returns a structured schema this tool should handle, tick “runs when LLM returns”.');
+    lines.push('If that state key is a list, generated code will batch; a scalar key will invoke once.');
+  } else if (/loop|stop|round|iterat|conditional|router/.test(q)) {
+    lines.push('Every conditional needs a real stop, not “is the answer good?”.');
+    lines.push('ReAct / tool-calling: did the model request a tool? Reflexion: N tool rounds (count tool results in messages). Retry: attempts vs max. HITL: human approve/reject.');
+    lines.push('Label both outgoing branches so continue vs end cannot be swapped.');
+  } else if (/schema|output contract|pydantic|return type/.test(q)) {
+    lines.push('Schemas are the contract of one model shot, not a copy of shared state. Not every graph needs them — only LLM nodes that must return a shape.');
+    lines.push('If two LLM shots share a shape and the second adds fields, use extends instead of duplicating.');
+    lines.push('Then bind each LLM node to the schema it must fill.');
+  } else if (/state|shared|memory|messages/.test(q)) {
+    lines.push('State is what the next node still needs to see. Do not duplicate every schema field into state.');
+    lines.push('Agent-style graphs usually keep messages. Project onto state only what a tool must read, plus any counter or plan index the conditional uses.');
+  } else if (/output|return|user see|final/.test(q)) {
+    lines.push('End does not compute. OUTPUT is what you promised the user.');
+    lines.push('If the last LLM is structured, map those fields here. Leave internal fuel (critiques, search queries, plans) off the panel unless the user should see them.');
+  } else {
+    lines.push('I am looking at your canvas as a design for whatever flow you are building — templates or custom.');
+    if (g.problem) lines.push('Job: ' + g.problem.trim().slice(0, 180));
+    lines.push('You have ' + (g.nodes || []).length + ' nodes, ' + (g.schemas || []).length + ' schemas, ' + (g.outputs || []).length + ' outputs.');
+  }
+
+  if (gaps.length) {
+    lines.push('');
+    lines.push('Still open:');
+    gaps.slice(0, 4).forEach((gap, i) => lines.push((i + 1) + '. ' + gap));
+    if (gaps.length > 4) lines.push('…and ' + (gaps.length - 4) + ' more.');
+  } else if (!tmpl && !emptyish) {
+    lines.push('');
+    lines.push('The skeleton looks complete. Next: generate code and check it against this canvas, or ask how a specific template would differ.');
+  }
+  return lines.join('\n');
+}
+
+function renderAssistant() {
+  const box = document.getElementById('assist-msgs');
+  if (!box) return;
+  box.innerHTML = '';
+  assistantMessages.forEach(m => {
+    const el = document.createElement('div');
+    el.className = 'lg-assist-bubble ' + (m.role === 'user' ? 'user' : 'bot') + (m.pending ? ' pending' : '');
+    el.textContent = m.text;
+    box.appendChild(el);
+  });
+  box.scrollTop = box.scrollHeight;
+}
+
+function toggleAssistant(force) {
+  const body = document.getElementById('lg-body');
+  const btn = document.getElementById('assist-btn');
+  if (force === false) assistantOpen = false;
+  else if (force === true) assistantOpen = true;
+  else assistantOpen = !assistantOpen;
+  if (body) body.classList.toggle('assist-open', assistantOpen);
+  document.body.classList.toggle('assist-open', assistantOpen);
+  if (btn) {
+    btn.classList.toggle('active', assistantOpen);
+    btn.setAttribute('aria-pressed', assistantOpen ? 'true' : 'false');
+    btn.setAttribute('aria-label', assistantOpen ? 'Close design assistant' : 'Design assistant');
+  }
+  if (assistantOpen && !assistantMessages.length) {
+    assistantMessages.push({
+      role: 'assistant',
+      text: 'I can walk any flow on this canvas — ReAct, Reflexion, RAG, supervisor, or a custom graph. Ask which template fits, or what to do next.\n\n' + localCoachReply('Which template fits this job, and how do I build it step by step?'),
+    });
+    renderAssistant();
+  }
+}
+
+function askAssistant(text) {
+  const input = document.getElementById('assist-input');
+  if (input) input.value = text;
+  if (!assistantOpen) toggleAssistant(true);
+  sendAssistant();
+}
+
+function assistKeydown(ev) {
+  if (ev.key === 'Enter' && !ev.shiftKey) {
+    ev.preventDefault();
+    sendAssistant(ev);
+  }
+}
+
+async function sendAssistant(ev) {
+  if (ev && ev.preventDefault) ev.preventDefault();
+  if (assistantBusy) return;
+  const input = document.getElementById('assist-input');
+  const question = ((input && input.value) || '').trim();
+  if (!question) return;
+  if (input) input.value = '';
+  if (!assistantOpen) toggleAssistant(true);
+
+  assistantMessages.push({ role: 'user', text: question });
+  assistantMessages.push({ role: 'assistant', text: 'Looking at the canvas…', pending: true });
+  renderAssistant();
+  assistantBusy = true;
+  const sendBtn = document.getElementById('assist-send');
+  if (sendBtn) sendBtn.disabled = true;
+
+  const history = assistantMessages
+    .filter(m => !m.pending)
+    .slice(-8)
+    .map(m => ({ role: m.role, text: m.text }));
+  // history currently includes the user question; API wants prior turns only
+  if (history.length && history[history.length - 1].role === 'user') history.pop();
+
+  let reply = '';
+  let source = 'local';
+  try {
+    const guest = typeof isLangCanvasGuest === 'function' && isLangCanvasGuest();
+    let idToken = null;
+    if (!guest && typeof getIdTokenForApi === 'function') {
+      try { idToken = await getIdTokenForApi(); } catch (_) { idToken = null; }
+    }
+    const headers = { 'Content-Type': 'application/json' };
+    if (idToken) headers.Authorization = 'Bearer ' + idToken;
+    if (guest && typeof getGuestIdForApi === 'function') {
+      const gid = getGuestIdForApi();
+      if (gid) headers['X-LangCanvas-Guest-Id'] = gid;
+    }
+    const res = await fetch(ASSISTANT_URL, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({
+        question: question,
+        history: history,
+        graph: compactGraphForCoach(),
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      reply = (data && (data.reply || data.text)) || '';
+      if (reply) source = 'live';
+    }
+  } catch (_) { /* local coach */ }
+
+  if (!reply) reply = localCoachReply(question);
+  const pending = assistantMessages.find(m => m.pending);
+  if (pending) {
+    pending.text = reply;
+    pending.pending = false;
+    if (source === 'local') pending.text = reply;
+  } else {
+    assistantMessages.push({ role: 'assistant', text: reply });
+  }
+  renderAssistant();
+  assistantBusy = false;
+  if (sendBtn) sendBtn.disabled = false;
 }
 
 buildMarkerDefs();
