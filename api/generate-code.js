@@ -32,7 +32,12 @@ CRITICAL MAPPING RULES (LangCanvas → LangGraph):
     - detail.toolId is a catalog id (tavily, wikipedia, duckduckgo, python_repl) → import that LangChain tool and wire args from detail.toolArgs (param ← state key fromKey).
     - detail.toolId "custom" (or unknown) → emit an @tool stub named detail.tool with detail.toolDesc and toolArgs; raise NotImplementedError in the body.
     Tools are design-time only; still generate real Python that compiles.
-11. Output plain Python only. Multi-file: "# chains.py" / "# main.py" headers. No markdown fences. No trailing junk.`;
+11. If the graph has a "schemas" array, emit those as Pydantic models in schemas.py (fields, types, Field descriptions, extendsId inheritance). LLM nodes with detail.outputSchemaId must bind_tools(tools=[ThatModel], tool_choice="ThatModel") when detail.bindTools is true.
+12. If a tool node has detail.handlesSchemaIds, it runs when the LLM returns those Pydantic models. Emit ToolNode([StructuredTool.from_function(fn, name=Model.__name__) for each handled schema]). Do not mention ToolNode in comments as a canvas concept — it is codegen only.
+13. Tool invoke vs batch: if the shared-state key in toolArgs.fromKey has type "list" or "list[str]", call tool.batch([{param: item} for item in state[fromKey]]); otherwise tool.invoke({param: state[fromKey]}).
+14. Router detail.stopMode "tool_rounds": stop when sum(isinstance(m, ToolMessage) for m in state["messages"]) >= N. N is detail.stopMax as a literal, or the initial value of that shared-state key. Branch "si" = stop, "no" = continue. Do not require a tool_visits counter in state.
+15. Graph "outputs" array is what the compiled graph should print from the last AIMessage tool call: each {key, schemaId, field} maps to args.get("field").
+16. Output plain Python only. Multi-file: "# chains.py" / "# main.py" headers. No markdown fences. No trailing junk.`;
 
 const hitsByUid = new Map();
 const lastOkByUid = new Map();

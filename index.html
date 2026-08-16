@@ -93,12 +93,13 @@
   }
   .lg-panel h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; }
   .lg-state-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
-  .lg-state-row input {
+  .lg-state-row input, .lg-state-row select.t {
     font-family: inherit; font-size: 12.5px; padding: 5px 7px;
     border: 1px solid var(--line-strong); border-radius: 6px; background: var(--paper);
   }
-  .lg-state-row input.k { width: 88px; }
+  .lg-state-row input.k { width: 72px; }
   .lg-state-row input.v { flex: 1; min-width: 0; }
+  .lg-state-row select.t { width: 70px; font-size: 11px; padding: 5px 4px; }
   .lg-state-row .rm { cursor: pointer; color: var(--ink-soft); font-size: 15px; padding: 0 3px; }
   .lg-detail-head {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -168,9 +169,25 @@
     border: 1px solid var(--line); border-radius: 6px; background: var(--paper);
   }
   .lg-detail-hint { font-size: 11.5px; color: var(--ink-soft); margin-top: 4px; }
-  .lg-tool-legend {
-    font-size: 10px; line-height: 1.35; color: #C0392B; margin-top: 3px;
+  .lg-schema-block {
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px;
+    margin-bottom: 8px; background: var(--paper);
   }
+  .lg-schema-head {
+    display: flex; gap: 4px; align-items: center;
+    margin: 0 0 8px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .lg-schema-head input.name { flex: 1; min-width: 0; font-weight: 600; width: auto; }
+  .lg-schema-head select.ext { width: 86px; font-size: 11px; padding: 5px 4px; }
+  .lg-schema-field {
+    display: flex; flex-direction: column; gap: 5px;
+    margin-bottom: 6px; padding: 6px;
+    border: 1px solid var(--line); border-radius: 7px;
+    background: var(--card);
+  }
+  .lg-schema-field:last-of-type { margin-bottom: 8px; }
+  .lg-schema-field input.desc { margin-top: 0; font-size: 11.5px; color: var(--ink-soft); }
   .lg-node.detail-warn:not(.selected):not(.problem) {
     outline: 2px solid #E08A2E; outline-offset: 3px;
   }
@@ -675,6 +692,18 @@
         <div id="state-list"></div>
         <button class="lg-btn" style="width:100%; margin-top:4px;" onclick="addStateRow()">+ variable</button>
       </div>
+      <div class="lg-panel">
+        <h3>schemas</h3>
+        <p class="lg-detail-hint" style="margin:0 0 8px;">I/O contracts (Pydantic). What each LLM node returns.</p>
+        <div id="schema-list"></div>
+        <button class="lg-btn" style="width:100%; margin-top:4px;" onclick="addSchema()">+ schema</button>
+      </div>
+      <div class="lg-panel">
+        <h3>output</h3>
+        <p class="lg-detail-hint" style="margin:0 0 8px;">What the graph returns (fields of the last structured reply).</p>
+        <div id="output-list"></div>
+        <button class="lg-btn" style="width:100%; margin-top:4px;" onclick="addGraphOutput()">+ output</button>
+      </div>
       <div class="lg-panel" id="node-detail-panel" style="display:none;"></div>
       <div class="lg-panel" id="results-panel" style="display:none;">
         <h3>results</h3>
@@ -969,6 +998,8 @@ let selected = new Set();
 let dragGroupOrigins = null; // { id: {x,y} } when moving a multi-selection
 let marquee = null; // { x0, y0, x1, y1, additive }
 let stateVars = [];
+let schemas = [];
+let graphOutputs = [];
 let runCurrent = null;
 let runSteps = 0;
 let visitCounts = {};
@@ -1112,10 +1143,15 @@ function renderNodes() {
     }
     if (n.type === 'action' && n.detail) {
       const badges = [];
-      if (n.detail.kind === 'llm') badges.push('LLM');
+      if (n.detail.kind === 'llm') {
+        badges.push('LLM');
+        const sch = schemaById(n.detail.outputSchemaId);
+        if (sch) badges.push(schemaClassName(sch));
+      }
       if (n.detail.kind === 'tool') {
         const spec = catalogById(n.detail.toolId);
         badges.push(spec ? spec.tool : ((n.detail.tool || '').trim() ? n.detail.tool : 'custom'));
+        handledSchemaClasses(n).forEach(cls => badges.push(cls));
       }
       const writeCount = (n.detail.writes || []).length;
       if (writeCount > 1) badges.push('writes ×' + writeCount);
@@ -1894,8 +1930,25 @@ function toggleMode(m) {
   renderNodes();
 }
 
-function addStateRow(key, val) {
-  stateVars.push({ key: key || '', val: val || '' });
+const STATE_TYPES = ['str', 'int', 'bool', 'list', 'messages'];
+const FIELD_PRIMITIVES = ['str', 'int', 'float', 'bool', 'list[str]', 'list'];
+
+function inferStateType(key) {
+  return String(key || '').trim() === 'messages' ? 'messages' : 'str';
+}
+
+function stateTypeOf(key) {
+  const row = stateVars.find(v => v.key === key);
+  return (row && row.type) || inferStateType(key);
+}
+
+function isListStateKey(key) {
+  const t = stateTypeOf(key);
+  return t === 'list' || t === 'list[str]';
+}
+
+function addStateRow(key, val, type) {
+  stateVars.push({ key: key || '', val: val || '', type: type || inferStateType(key) });
   renderState();
   renderNodeDetail();
 }
@@ -1904,22 +1957,34 @@ function renderState() {
   const list = document.getElementById('state-list');
   list.innerHTML = '';
   stateVars.forEach((row, i) => {
+    if (!row.type) row.type = inferStateType(row.key);
     const div = document.createElement('div');
     div.className = 'lg-state-row';
     div.innerHTML =
       '<input class="k" placeholder="variable" value="' + escapeHtml(row.key) + '">' +
+      '<select class="t">' + STATE_TYPES.map(t =>
+        '<option value="' + t + '"' + (row.type === t ? ' selected' : '') + '>' + t + '</option>'
+      ).join('') + '</select>' +
       '<input class="v" placeholder="value" value="' + escapeHtml(row.val) + '">' +
       '<span class="rm" title="remove">×</span>';
-    const [ki, vi, rm] = div.querySelectorAll('input, .rm');
+    const ki = div.querySelector('input.k');
+    const ts = div.querySelector('select.t');
+    const vi = div.querySelector('input.v');
+    const rm = div.querySelector('.rm');
     ki.addEventListener('focus', () => { ki.dataset.prev = (ki.value || '').trim(); });
     ki.addEventListener('input', () => { stateVars[i].key = ki.value; });
     ki.addEventListener('change', () => {
       const prev = ki.dataset.prev || '';
       const next = (ki.value || '').trim();
       if (prev && next && prev !== next) renameStateKeyInDetails(prev, next);
+      if (next === 'messages' && stateVars[i].type === 'str') {
+        stateVars[i].type = 'messages';
+        ts.value = 'messages';
+      }
       renderNodes();
       renderNodeDetail();
     });
+    ts.addEventListener('change', () => { stateVars[i].type = ts.value; });
     vi.addEventListener('input', () => { stateVars[i].val = vi.value; });
     rm.addEventListener('click', () => {
       stateVars.splice(i, 1);
@@ -1928,6 +1993,313 @@ function renderState() {
       renderNodeDetail();
     });
     list.appendChild(div);
+  });
+}
+
+function schemaById(id) {
+  return schemas.find(s => s.id === id) || null;
+}
+
+function schemaClassName(s) {
+  if (!s) return 'Schema';
+  const raw = String(s.name || s.id || 'Schema').trim();
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(raw)) return raw;
+  const n = pyName(raw, s.id || 'schema');
+  return n.split('_').map(p => p ? p.charAt(0).toUpperCase() + p.slice(1) : '').join('') || 'Schema';
+}
+
+function fieldTypeOptions(exceptId) {
+  const opts = FIELD_PRIMITIVES.map(t => ({ value: t, label: t }));
+  schemas.forEach(s => {
+    if (s.id === exceptId) return;
+    opts.push({ value: 'schema:' + s.id, label: schemaClassName(s) });
+  });
+  return opts;
+}
+
+function addSchema(spec) {
+  const s = {
+    id: (spec && spec.id) || uid('schema'),
+    name: (spec && spec.name) || 'NewSchema',
+    extendsId: (spec && spec.extendsId) || '',
+    fields: Array.isArray(spec && spec.fields)
+      ? spec.fields.map(f => ({
+          key: String((f && f.key) || ''),
+          type: String((f && f.type) || 'str'),
+          desc: String((f && f.desc) || ''),
+        }))
+      : [{ key: '', type: 'str', desc: '' }],
+  };
+  schemas.push(s);
+  renderSchemas();
+  renderNodeDetail();
+  return s;
+}
+
+function upsertSchemaByName(name, spec) {
+  const hit = schemas.find(s => (s.name || '').trim().toLowerCase() === String(name || '').trim().toLowerCase());
+  if (hit) {
+    if (spec && spec.extendsId != null) hit.extendsId = spec.extendsId;
+    if (spec && Array.isArray(spec.fields)) {
+      hit.fields = spec.fields.map(f => ({
+        key: String((f && f.key) || ''),
+        type: String((f && f.type) || 'str'),
+        desc: String((f && f.desc) || ''),
+      }));
+    }
+    renderSchemas();
+    return hit;
+  }
+  return addSchema(Object.assign({ name: name }, spec || {}));
+}
+
+function applyTemplateSchemas(list) {
+  if (!_addingTemplate) schemas = [];
+  const have = new Set(schemas.map(s => (s.name || '').trim().toLowerCase()));
+  const created = [];
+  (list || []).forEach(spec => {
+    const name = (spec.name || '').trim().toLowerCase();
+    const existing = schemas.find(s => (s.name || '').trim().toLowerCase() === name);
+    if (existing) {
+      created.push(existing);
+      return;
+    }
+    if (have.has(name)) return;
+    created.push(addSchema(spec));
+    have.add(name);
+  });
+  renderSchemas();
+  return created;
+}
+
+function renameSchemaIdInGraph(prev, next) {
+  schemas.forEach(s => {
+    if (s.extendsId === prev) s.extendsId = next;
+    (s.fields || []).forEach(f => {
+      if (f.type === 'schema:' + prev) f.type = 'schema:' + next;
+    });
+  });
+  Object.values(nodes).forEach(n => {
+    if (n.detail && n.detail.outputSchemaId === prev) n.detail.outputSchemaId = next;
+    if (n.detail && Array.isArray(n.detail.handlesSchemaIds)) {
+      n.detail.handlesSchemaIds = n.detail.handlesSchemaIds.map(id => id === prev ? next : id);
+    }
+  });
+  graphOutputs.forEach(o => { if (o.schemaId === prev) o.schemaId = next; });
+}
+
+function deleteSchemaAt(i) {
+  const gone = schemas[i];
+  if (!gone) return;
+  schemas.splice(i, 1);
+  schemas.forEach(s => {
+    if (s.extendsId === gone.id) s.extendsId = '';
+    (s.fields || []).forEach(f => {
+      if (f.type === 'schema:' + gone.id) f.type = 'str';
+    });
+  });
+  Object.values(nodes).forEach(n => {
+    if (n.detail && n.detail.outputSchemaId === gone.id) n.detail.outputSchemaId = '';
+    if (n.detail && Array.isArray(n.detail.handlesSchemaIds)) {
+      n.detail.handlesSchemaIds = n.detail.handlesSchemaIds.filter(id => id !== gone.id);
+    }
+  });
+  graphOutputs.forEach(o => {
+    if (o.schemaId === gone.id) o.schemaId = '';
+  });
+  renderSchemas();
+  renderNodes();
+  renderNodeDetail();
+}
+
+function renderSchemas() {
+  const list = document.getElementById('schema-list');
+  if (!list) return;
+  list.innerHTML = '';
+  schemas.forEach((s, i) => {
+    const box = document.createElement('div');
+    box.className = 'lg-schema-block';
+    const head = document.createElement('div');
+    head.className = 'lg-schema-head';
+    const name = document.createElement('input');
+    name.className = 'lg-detail-line name';
+    name.placeholder = 'ClassName';
+    name.value = s.name || '';
+    name.addEventListener('input', () => { s.name = name.value; });
+    name.addEventListener('change', () => { renderSchemas(); renderNodeDetail(); renderNodes(); });
+    const ext = document.createElement('select');
+    ext.className = 'lg-chip-add ext';
+    ext.innerHTML = '<option value="">extends…</option>' + schemas.filter(o => o.id !== s.id).map(o =>
+      '<option value="' + escapeHtml(o.id) + '"' + (s.extendsId === o.id ? ' selected' : '') + '>' +
+        escapeHtml(schemaClassName(o)) + '</option>'
+    ).join('');
+    ext.addEventListener('change', () => { s.extendsId = ext.value; });
+    const rm = document.createElement('span');
+    rm.className = 'rm';
+    rm.textContent = '×';
+    rm.title = 'remove schema';
+    rm.style.cursor = 'pointer';
+    rm.style.color = 'var(--ink-soft)';
+    rm.addEventListener('click', () => deleteSchemaAt(i));
+    head.appendChild(name);
+    head.appendChild(ext);
+    head.appendChild(rm);
+    box.appendChild(head);
+
+    (s.fields || []).forEach((f, fi) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'lg-schema-field';
+      const row = document.createElement('div');
+      row.className = 'lg-write-row';
+      const key = document.createElement('input');
+      key.className = 'lg-detail-line';
+      key.style.width = '78px';
+      key.placeholder = 'field';
+      key.value = f.key || '';
+      key.addEventListener('input', () => { f.key = key.value; });
+      const typ = document.createElement('select');
+      typ.className = 'lg-chip-add';
+      typ.style.flex = '1';
+      fieldTypeOptions(s.id).forEach(opt => {
+        const o = document.createElement('option');
+        o.value = opt.value;
+        o.textContent = opt.label;
+        if (f.type === opt.value) o.selected = true;
+        typ.appendChild(o);
+      });
+      if (f.type && ![...typ.options].some(o => o.value === f.type)) {
+        const dead = document.createElement('option');
+        dead.value = f.type; dead.textContent = f.type + ' (missing)'; dead.selected = true;
+        typ.appendChild(dead);
+      }
+      typ.addEventListener('change', () => { f.type = typ.value; });
+      const frm = document.createElement('span');
+      frm.className = 'rm';
+      frm.textContent = '×';
+      frm.title = 'remove field';
+      frm.style.cursor = 'pointer';
+      frm.style.color = 'var(--ink-soft)';
+      frm.addEventListener('click', () => {
+        s.fields.splice(fi, 1);
+        renderSchemas();
+      });
+      row.appendChild(key);
+      row.appendChild(typ);
+      row.appendChild(frm);
+      const desc = document.createElement('input');
+      desc.className = 'lg-detail-line desc';
+      desc.placeholder = 'description → Field(...)';
+      desc.value = f.desc || '';
+      desc.addEventListener('input', () => { f.desc = desc.value; });
+      wrap.appendChild(row);
+      wrap.appendChild(desc);
+      box.appendChild(wrap);
+    });
+
+    const addF = document.createElement('button');
+    addF.className = 'lg-btn';
+    addF.style.width = '100%';
+    addF.textContent = '+ field';
+    addF.addEventListener('click', () => {
+      s.fields.push({ key: '', type: 'str', desc: '' });
+      renderSchemas();
+    });
+    box.appendChild(addF);
+    list.appendChild(box);
+  });
+  renderGraphOutputs();
+}
+
+function schemaFields(s) {
+  const out = [];
+  const seen = {};
+  function walk(sch, guard) {
+    if (!sch || guard > 8) return;
+    if (sch.extendsId) walk(schemaById(sch.extendsId), guard + 1);
+    (sch.fields || []).forEach(f => {
+      const k = (f.key || '').trim();
+      if (k && !seen[k]) {
+        seen[k] = true;
+        out.push(f);
+      }
+    });
+  }
+  walk(s, 0);
+  return out;
+}
+
+function addGraphOutput() {
+  const s = schemas[0];
+  const fields = s ? schemaFields(s) : [];
+  graphOutputs.push({
+    key: (fields[0] && fields[0].key) || 'result',
+    schemaId: s ? s.id : '',
+    field: (fields[0] && fields[0].key) || '',
+  });
+  renderGraphOutputs();
+}
+
+function applyTemplateOutputs(list) {
+  if (!_addingTemplate) graphOutputs = [];
+  (list || []).forEach(o => {
+    if (!graphOutputs.some(x => x.key === o.key && x.field === o.field)) {
+      graphOutputs.push({ key: o.key || '', schemaId: o.schemaId || '', field: o.field || '' });
+    }
+  });
+  renderGraphOutputs();
+}
+
+function renderGraphOutputs() {
+  const list = document.getElementById('output-list');
+  if (!list) return;
+  list.innerHTML = '';
+  graphOutputs.forEach((o, i) => {
+    const row = document.createElement('div');
+    row.className = 'lg-write-row';
+    row.style.flexWrap = 'wrap';
+    const key = document.createElement('input');
+    key.className = 'lg-detail-line';
+    key.style.width = '72px';
+    key.placeholder = 'name';
+    key.value = o.key || '';
+    key.addEventListener('input', () => { o.key = key.value; });
+    const sch = document.createElement('select');
+    sch.className = 'lg-chip-add';
+    sch.style.flex = '1';
+    sch.innerHTML = '<option value="">schema</option>' + schemas.map(s =>
+      '<option value="' + escapeHtml(s.id) + '"' + (o.schemaId === s.id ? ' selected' : '') + '>' +
+        escapeHtml(schemaClassName(s)) + '</option>'
+    ).join('');
+    sch.addEventListener('change', () => {
+      o.schemaId = sch.value;
+      const fields = schemaFields(schemaById(o.schemaId));
+      if (fields.length && !fields.some(f => f.key === o.field)) o.field = fields[0].key;
+      renderGraphOutputs();
+    });
+    const fld = document.createElement('select');
+    fld.className = 'lg-chip-add';
+    fld.style.flex = '1';
+    const fields = schemaFields(schemaById(o.schemaId));
+    fld.innerHTML = '<option value="">field</option>' + fields.map(f =>
+      '<option value="' + escapeHtml(f.key) + '"' + (o.field === f.key ? ' selected' : '') + '>' +
+        escapeHtml(f.key) + '</option>'
+    ).join('');
+    fld.addEventListener('change', () => { o.field = fld.value; });
+    const rm = document.createElement('span');
+    rm.className = 'rm';
+    rm.textContent = '×';
+    rm.title = 'remove';
+    rm.style.cursor = 'pointer';
+    rm.style.color = 'var(--ink-soft)';
+    rm.addEventListener('click', () => {
+      graphOutputs.splice(i, 1);
+      renderGraphOutputs();
+    });
+    row.appendChild(key);
+    row.appendChild(sch);
+    row.appendChild(fld);
+    row.appendChild(rm);
+    list.appendChild(row);
   });
 }
 
@@ -2182,6 +2554,8 @@ function ensureNodeDetail(n) {
       n.detail.temperature = typeof d.temperature === 'number' ? d.temperature : 0;
       n.detail.system = d.system != null ? String(d.system) : '';
       n.detail.prompt = d.prompt != null ? String(d.prompt) : '';
+      n.detail.outputSchemaId = d.outputSchemaId != null ? String(d.outputSchemaId) : '';
+      n.detail.bindTools = d.bindTools !== false;
     }
     if (kind === 'tool') {
       const toolId = d.toolId ? String(d.toolId) : inferToolId(d.tool);
@@ -2198,6 +2572,9 @@ function ensureNodeDetail(n) {
       if (spec && !n.detail.toolArgs.length) {
         applyCatalogTool(n, spec.id);
       }
+      n.detail.handlesSchemaIds = Array.isArray(d.handlesSchemaIds)
+        ? d.handlesSchemaIds.map(String).filter(Boolean)
+        : [];
     }
   } else {
     n.detail = {
@@ -2207,6 +2584,9 @@ function ensureNodeDetail(n) {
       predOp: d.predOp || '>=',
       predRightMode: d.predRightMode === 'literal' ? 'literal' : 'key',
       predRight: d.predRight != null ? String(d.predRight) : '',
+      stopMode: d.stopMode === 'tool_rounds' ? 'tool_rounds' : 'predicate',
+      stopMaxMode: d.stopMaxMode === 'literal' ? 'literal' : 'key',
+      stopMax: d.stopMax != null ? String(d.stopMax) : '',
       branches: Array.isArray(d.branches)
         ? d.branches.map(b => ({
             label: String((b && b.label) || ''),
@@ -2239,6 +2619,9 @@ function nodeDetailIssues(n) {
   if (n.type === 'action' && n.detail.kind === 'llm' && !(n.detail.system || '').trim()) {
     issues.push('LLM node is missing a system prompt');
   }
+  if (n.type === 'action' && n.detail.kind === 'llm' && n.detail.outputSchemaId && !schemaById(n.detail.outputSchemaId)) {
+    issues.push('LLM output schema is missing');
+  }
   if (n.type === 'action' && n.detail.kind === 'tool') {
     if (n.detail.toolId !== 'custom' && !catalogById(n.detail.toolId) && !(n.detail.tool || '').trim()) {
       issues.push('tool node has no catalog tool or custom name');
@@ -2250,17 +2633,26 @@ function nodeDetailIssues(n) {
       if (a.fromKey && !keys.has(a.fromKey)) issues.push('tool arg "' + a.param + '" reads missing key');
       if (a.param && !a.fromKey) issues.push('tool arg "' + a.param + '" has no state key');
     });
+    (n.detail.handlesSchemaIds || []).forEach(id => {
+      if (id && !schemaById(id)) issues.push('tool handles a missing schema');
+    });
   }
   if (n.type === 'router') {
-    if (!(n.detail.predLeft || '').trim() && !(n.detail.condition || '').trim()) {
-      issues.push('conditional has no predicate');
-    }
-    if (n.detail.predLeft && !keys.has(n.detail.predLeft)) {
-      issues.push('predicate left side is not in shared state');
-    }
-    if (n.detail.predRightMode !== 'literal' && n.detail.predOp !== 'truthy' && n.detail.predOp !== 'empty') {
-      if (n.detail.predRight && !keys.has(n.detail.predRight)) {
-        issues.push('predicate right side is not in shared state');
+    if (n.detail.stopMode === 'tool_rounds') {
+      if (n.detail.stopMaxMode !== 'literal' && n.detail.stopMax && !keys.has(n.detail.stopMax)) {
+        issues.push('tool-rounds limit key is not in shared state');
+      }
+    } else {
+      if (!(n.detail.predLeft || '').trim() && !(n.detail.condition || '').trim()) {
+        issues.push('conditional has no predicate');
+      }
+      if (n.detail.predLeft && !keys.has(n.detail.predLeft)) {
+        issues.push('predicate left side is not in shared state');
+      }
+      if (n.detail.predRightMode !== 'literal' && n.detail.predOp !== 'truthy' && n.detail.predOp !== 'empty') {
+        if (n.detail.predRight && !keys.has(n.detail.predRight)) {
+          issues.push('predicate right side is not in shared state');
+        }
       }
     }
   }
@@ -2438,19 +2830,25 @@ function renderNodeDetail() {
         if (typeof n.detail.temperature !== 'number') n.detail.temperature = 0;
         if (n.detail.system == null) n.detail.system = '';
         if (n.detail.prompt == null) n.detail.prompt = '';
+        if (n.detail.outputSchemaId == null) n.detail.outputSchemaId = '';
+        if (n.detail.bindTools == null) n.detail.bindTools = true;
       } else {
         delete n.detail.model;
         delete n.detail.temperature;
         delete n.detail.system;
         delete n.detail.prompt;
+        delete n.detail.outputSchemaId;
+        delete n.detail.bindTools;
       }
       if (n.detail.kind === 'tool') {
         applyCatalogTool(n, n.detail.toolId || 'custom');
+        if (!Array.isArray(n.detail.handlesSchemaIds)) n.detail.handlesSchemaIds = [];
       } else {
         delete n.detail.tool;
         delete n.detail.toolId;
         delete n.detail.toolDesc;
         delete n.detail.toolArgs;
+        delete n.detail.handlesSchemaIds;
       }
       renderNodes();
       renderNodeDetail();
@@ -2496,6 +2894,48 @@ function renderNodeDetail() {
       mRow.appendChild(model);
       mRow.appendChild(temp);
       panel.appendChild(mRow);
+
+      addDetailLabel(panel, 'output schema');
+      const schSel = document.createElement('select');
+      schSel.className = 'lg-select lg-tool-source';
+      schSel.innerHTML = '<option value="">none (free text)</option>' + schemas.map(s =>
+        '<option value="' + escapeHtml(s.id) + '"' + (n.detail.outputSchemaId === s.id ? ' selected' : '') + '>' +
+          escapeHtml(schemaClassName(s)) + '</option>'
+      ).join('');
+      if (n.detail.outputSchemaId && !schemaById(n.detail.outputSchemaId)) {
+        const dead = document.createElement('option');
+        dead.value = n.detail.outputSchemaId;
+        dead.textContent = 'missing schema';
+        dead.selected = true;
+        schSel.appendChild(dead);
+      }
+      schSel.addEventListener('change', () => {
+        n.detail.outputSchemaId = schSel.value;
+        if (schSel.value) n.detail.bindTools = true;
+        renderNodes();
+        renderNodeDetail();
+      });
+      panel.appendChild(schSel);
+      if (n.detail.outputSchemaId) {
+        const bindRow = document.createElement('label');
+        bindRow.className = 'lg-detail-hint';
+        bindRow.style.display = 'flex';
+        bindRow.style.alignItems = 'center';
+        bindRow.style.gap = '6px';
+        bindRow.style.color = 'var(--ink)';
+        const bind = document.createElement('input');
+        bind.type = 'checkbox';
+        bind.checked = n.detail.bindTools !== false;
+        bind.addEventListener('change', () => { n.detail.bindTools = bind.checked; });
+        bindRow.appendChild(bind);
+        bindRow.appendChild(document.createTextNode('bind_tools + tool_choice (structured output)'));
+        panel.appendChild(bindRow);
+      } else if (!schemas.length) {
+        const hint = document.createElement('div');
+        hint.className = 'lg-detail-hint';
+        hint.textContent = 'Add a schema in SCHEMAS to declare this node’s return type.';
+        panel.appendChild(hint);
+      }
     }
 
     if (n.detail.kind === 'tool') {
@@ -2606,6 +3046,37 @@ function renderNodeDetail() {
         });
         panel.appendChild(addArg);
       }
+
+      addDetailLabel(panel, 'runs when LLM returns');
+      if (!Array.isArray(n.detail.handlesSchemaIds)) n.detail.handlesSchemaIds = [];
+      if (!schemas.length) {
+        const empty = document.createElement('div');
+        empty.className = 'lg-detail-hint';
+        empty.textContent = 'Add schemas, then tick which structured outputs this tool handles.';
+        panel.appendChild(empty);
+      } else {
+        schemas.forEach(s => {
+          const lab = document.createElement('label');
+          lab.className = 'lg-detail-hint';
+          lab.style.display = 'flex';
+          lab.style.alignItems = 'center';
+          lab.style.gap = '6px';
+          lab.style.color = 'var(--ink)';
+          lab.style.marginTop = '4px';
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.checked = n.detail.handlesSchemaIds.indexOf(s.id) >= 0;
+          cb.addEventListener('change', () => {
+            const set = n.detail.handlesSchemaIds.filter(id => id !== s.id);
+            if (cb.checked) set.push(s.id);
+            n.detail.handlesSchemaIds = set;
+            renderNodes();
+          });
+          lab.appendChild(cb);
+          lab.appendChild(document.createTextNode(schemaClassName(s)));
+          panel.appendChild(lab);
+        });
+      }
     }
 
     addDetailLabel(panel, 'writes → return dict');
@@ -2670,6 +3141,55 @@ function renderNodeDetail() {
 
   renderReadChips(panel, n);
 
+  addDetailLabel(panel, 'stop when');
+  const stopSel = document.createElement('select');
+  stopSel.className = 'lg-select lg-tool-source';
+  stopSel.innerHTML =
+    '<option value="predicate"' + (n.detail.stopMode !== 'tool_rounds' ? ' selected' : '') + '>state predicate</option>' +
+    '<option value="tool_rounds"' + (n.detail.stopMode === 'tool_rounds' ? ' selected' : '') + '>N tool rounds</option>';
+  stopSel.addEventListener('change', () => {
+    n.detail.stopMode = stopSel.value;
+    renderNodeDetail();
+    renderNodes();
+  });
+  panel.appendChild(stopSel);
+
+  if (n.detail.stopMode === 'tool_rounds') {
+    const hint = document.createElement('div');
+    hint.className = 'lg-detail-hint';
+    hint.textContent = 'Counts each tool result in messages. No extra counter needed.';
+    panel.appendChild(hint);
+    addDetailLabel(panel, 'N');
+    const nRow = document.createElement('div');
+    nRow.className = 'lg-pred-row';
+    const nMode = document.createElement('select');
+    nMode.className = 'lg-detail-line';
+    nMode.innerHTML =
+      '<option value="key"' + (n.detail.stopMaxMode !== 'literal' ? ' selected' : '') + '>state key</option>' +
+      '<option value="literal"' + (n.detail.stopMaxMode === 'literal' ? ' selected' : '') + '>literal</option>';
+    nMode.addEventListener('change', () => {
+      n.detail.stopMaxMode = nMode.value;
+      renderNodeDetail();
+    });
+    nRow.appendChild(nMode);
+    if (n.detail.stopMaxMode === 'literal') {
+      const lit = document.createElement('input');
+      lit.className = 'lg-detail-line';
+      lit.placeholder = '2';
+      lit.value = n.detail.stopMax || '2';
+      lit.addEventListener('input', () => { n.detail.stopMax = lit.value; });
+      nRow.appendChild(lit);
+    } else {
+      const lim = document.createElement('select');
+      lim.className = 'lg-detail-line';
+      lim.innerHTML = '<option value="">state key</option>' + stateVarNames().map(k =>
+        '<option value="' + escapeHtml(k) + '"' + (n.detail.stopMax === k ? ' selected' : '') + '>' + escapeHtml(k) + '</option>'
+      ).join('');
+      lim.addEventListener('change', () => { n.detail.stopMax = lim.value; });
+      nRow.appendChild(lim);
+    }
+    panel.appendChild(nRow);
+  } else {
   addDetailLabel(panel, 'if');
   const pred = document.createElement('div');
   pred.className = 'lg-pred-row';
@@ -2745,6 +3265,7 @@ function renderNodeDetail() {
   preview.className = 'lg-detail-hint';
   preview.textContent = 'return branch if ' + (formatPredicate(n.detail) || '…');
   panel.appendChild(preview);
+  }
 
   addDetailLabel(panel, 'then return');
   panel.appendChild(bLabel);
@@ -2999,11 +3520,15 @@ function resetAll() {
   clearTimeout(resetConfirmTimeout);
   resetConfirmPending = false;
   btn.textContent = 'reset';
-  nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = [];
+  nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = []; schemas = []; graphOutputs = [];
   selected.clear();
+  const problem = document.getElementById('problem-desc');
+  if (problem) problem.value = '';
   ensureStartNode();
   resetRun();
   renderState();
+  renderSchemas();
+  renderGraphOutputs();
   renderNodes();
   renderNodeDetail();
 }
@@ -3040,7 +3565,7 @@ function pickTemplate(key) {
 }
 
 function clearCanvasGraph() {
-  nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = [];
+  nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = []; schemas = []; graphOutputs = [];
   selected.clear();
   ensureStartNode();
 }
@@ -3068,14 +3593,19 @@ function computeGraphBounds(ids) {
 }
 
 function applyTemplateState(vars) {
+  const rows = (vars || []).map(v => ({
+    key: v.key,
+    val: v.val,
+    type: v.type || inferStateType(v.key),
+  }));
   if (!_addingTemplate) {
-    stateVars = vars.slice();
+    stateVars = rows;
     return;
   }
   const have = new Set(stateVars.map(v => v.key));
-  vars.forEach(v => {
+  rows.forEach(v => {
     if (!have.has(v.key)) {
-      stateVars.push({ key: v.key, val: v.val });
+      stateVars.push(v);
       have.add(v.key);
     }
   });
@@ -3333,6 +3863,25 @@ function loadTemplate(key) {
     applyReflectionLayout(gen, reflect, cond, end);
   } else if (key === 'reflexion') {
     setProblem('Reflexion agent: draft an answer, run search tools, revise from evidence, and loop until max iterations.');
+    const reflectionSch = upsertSchemaByName('Reflection', {
+      fields: [
+        { key: 'missing', type: 'str', desc: 'Critique of what is missing' },
+        { key: 'superfluous', type: 'str', desc: 'Critique of what is superfluous' },
+      ],
+    });
+    const answerSch = upsertSchemaByName('AnswerQuestion', {
+      fields: [
+        { key: 'answer', type: 'str', desc: '~250 word detailed answer to the question' },
+        { key: 'reflection', type: 'schema:' + reflectionSch.id, desc: 'Your reflection on the initial answer' },
+        { key: 'search_queries', type: 'list[str]', desc: '1-3 search queries to research improvements' },
+      ],
+    });
+    const reviseSch = upsertSchemaByName('ReviseAnswer', {
+      extendsId: answerSch.id,
+      fields: [
+        { key: 'references', type: 'list[str]', desc: 'Citations motivating your updated answer' },
+      ],
+    });
     const draft = addNode('action', 0, 0, 'draft');
     nodes[draft].effect = 'first_responder: initial answer + search queries';
     const execTools = addNode('action', 0, 0, 'execute_tools');
@@ -3340,7 +3889,7 @@ function loadTemplate(key) {
     const revise = addNode('action', 0, 0, 'revise');
     nodes[revise].effect = 'revisor rewrites using tool results';
     const eventLoop = addNode('router', 0, 0, 'event_loop');
-    nodes[eventLoop].effect = 'tool_visits ≥ MAX_ITERATIONS?';
+    nodes[eventLoop].effect = 'stop after N tool rounds';
     const end = addNode('end', 0, 0, 'end');
     nodes[draft].detail = {
       kind: 'llm', reads: ['messages'],
@@ -3351,6 +3900,8 @@ function loadTemplate(key) {
       model: 'gpt-4o-mini', temperature: 0,
       system: 'You are an expert researcher. Answer, critique, and propose search queries.',
       prompt: '{messages}',
+      outputSchemaId: answerSch.id,
+      bindTools: true,
     };
     nodes[execTools].detail = {
       kind: 'tool', reads: ['search_queries'],
@@ -3358,6 +3909,7 @@ function loadTemplate(key) {
       tool: 'TavilySearch',
       toolDesc: 'Web search via Tavily. Returns snippets for a query.',
       toolArgs: [{ param: 'query', fromKey: 'search_queries' }],
+      handlesSchemaIds: [answerSch.id, reviseSch.id],
       writes: [{ key: 'messages', op: 'append', expr: '[ToolMessage(content=result)]' }],
     };
     nodes[revise].detail = {
@@ -3366,13 +3918,18 @@ function loadTemplate(key) {
       model: 'gpt-4o-mini', temperature: 0,
       system: 'Revise the answer using tool results. Include citations.',
       prompt: '{messages}',
+      outputSchemaId: reviseSch.id,
+      bindTools: true,
     };
-    nodes[eventLoop].detail.reads = ['tool_visits', 'max_iterations'];
-    nodes[eventLoop].detail.predLeft = 'tool_visits';
+    nodes[eventLoop].detail.reads = ['messages', 'max_iterations'];
+    nodes[eventLoop].detail.stopMode = 'tool_rounds';
+    nodes[eventLoop].detail.stopMaxMode = 'key';
+    nodes[eventLoop].detail.stopMax = 'max_iterations';
+    nodes[eventLoop].detail.predLeft = '';
     nodes[eventLoop].detail.predOp = '>=';
     nodes[eventLoop].detail.predRightMode = 'key';
     nodes[eventLoop].detail.predRight = 'max_iterations';
-    nodes[eventLoop].detail.condition = 'tool_visits >= max_iterations';
+    nodes[eventLoop].detail.condition = '';
     link('start', draft);
     link(draft, execTools);
     link(execTools, revise);
@@ -3380,10 +3937,13 @@ function loadTemplate(key) {
     link(eventLoop, execTools, 'no');
     link(eventLoop, end, 'si');
     applyTemplateState([
-      { key: 'messages', val: '[]' },
-      { key: 'search_queries', val: '[]' },
-      { key: 'tool_visits', val: '0' },
-      { key: 'max_iterations', val: '2' },
+      { key: 'messages', val: '[]', type: 'messages' },
+      { key: 'search_queries', val: '[]', type: 'list' },
+      { key: 'max_iterations', val: '2', type: 'int' },
+    ]);
+    applyTemplateOutputs([
+      { key: 'answer', schemaId: reviseSch.id, field: 'answer' },
+      { key: 'references', schemaId: reviseSch.id, field: 'references' },
     ]);
     applyReflexionLayout(draft, execTools, revise, eventLoop, end);
   } else if (key === 'tool_calling') {
@@ -3549,6 +4109,7 @@ function loadTemplate(key) {
 
   resetRun();
   renderState();
+  renderSchemas();
   renderNodes();
   renderNodeDetail();
   // Only re-center when loading into an empty canvas; additive keeps your view/layout.
@@ -3605,9 +4166,16 @@ function loadExample(key) { loadTemplate(key); }
 
 function serializeGraph() {
   return {
-    version: 1,
+    version: 2,
     problem: document.getElementById('problem-desc').value,
-    stateVars: stateVars.map(v => ({ key: v.key, val: v.val })),
+    stateVars: stateVars.map(v => ({ key: v.key, val: v.val, type: v.type || inferStateType(v.key) })),
+    schemas: schemas.map(s => ({
+      id: s.id,
+      name: s.name,
+      extendsId: s.extendsId || '',
+      fields: (s.fields || []).map(f => ({ key: f.key, type: f.type, desc: f.desc })),
+    })),
+    outputs: graphOutputs.map(o => ({ key: o.key, schemaId: o.schemaId, field: o.field })),
     nodes: Object.values(nodes).map(n => {
       const row = { id: n.id, type: n.type, label: n.label, effect: n.effect, color: n.color, x: n.x, y: n.y };
       if ((n.type === 'action' || n.type === 'router') && n.detail) row.detail = JSON.parse(JSON.stringify(n.detail));
@@ -3648,7 +4216,19 @@ function importJSONPrompt() {
 }
 
 function loadGraphData(data) {
-  nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = [];
+  nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = []; schemas = []; graphOutputs = [];
+  (data.schemas || []).forEach(s => {
+    schemas.push({
+      id: s.id || uid('schema'),
+      name: s.name || 'Schema',
+      extendsId: s.extendsId || '',
+      fields: Array.isArray(s.fields)
+        ? s.fields.map(f => ({ key: String((f && f.key) || ''), type: String((f && f.type) || 'str'), desc: String((f && f.desc) || '') }))
+        : [],
+    });
+    const seqNum = parseInt(String(s.id || '').split('_').pop());
+    if (!isNaN(seqNum) && seqNum > nodeSeq) nodeSeq = seqNum;
+  });
   (data.nodes || []).forEach(n => {
     nodes[n.id] = { id: n.id, type: n.type, label: n.label, effect: n.effect || '', color: n.color || nextColor(n.type), x: n.x || 60, y: n.y || 60 };
     if (n.detail) nodes[n.id].detail = n.detail;
@@ -3667,10 +4247,21 @@ function loadGraphData(data) {
       });
     }
   });
-  (data.stateVars || []).forEach(v => stateVars.push({ key: v.key, val: v.val }));
+  (data.stateVars || []).forEach(v => stateVars.push({
+    key: v.key,
+    val: v.val,
+    type: v.type || inferStateType(v.key),
+  }));
+  graphOutputs = (data.outputs || []).map(o => ({
+    key: String((o && o.key) || ''),
+    schemaId: String((o && o.schemaId) || ''),
+    field: String((o && o.field) || ''),
+  }));
   document.getElementById('problem-desc').value = data.problem || '';
   resetRun();
   renderState();
+  renderSchemas();
+  renderGraphOutputs();
   renderNodes();
   renderNodeDetail();
 }
@@ -3953,8 +4544,212 @@ function generateReflectionCode() {
   ].join('\n');
 }
 
+function pyTypeForField(type) {
+  const t = String(type || 'str');
+  if (t === 'list[str]') return 'List[str]';
+  if (t === 'list') return 'list';
+  if (t === 'int') return 'int';
+  if (t === 'float') return 'float';
+  if (t === 'bool') return 'bool';
+  if (t.indexOf('schema:') === 0) {
+    const s = schemaById(t.slice(7));
+    return s ? schemaClassName(s) : 'str';
+  }
+  return 'str';
+}
+
+function topologicalSchemas() {
+  const pending = schemas.slice();
+  const done = {};
+  const out = [];
+  let guard = 0;
+  while (pending.length && guard < 80) {
+    guard += 1;
+    const next = [];
+    pending.forEach(s => {
+      const deps = [];
+      if (s.extendsId) deps.push(s.extendsId);
+      (s.fields || []).forEach(f => {
+        if (String(f.type).indexOf('schema:') === 0) deps.push(String(f.type).slice(7));
+      });
+      const ready = deps.every(id => !id || done[id] || !schemaById(id));
+      if (ready) {
+        out.push(s);
+        done[s.id] = true;
+      } else next.push(s);
+    });
+    if (next.length === pending.length) {
+      next.forEach(s => { out.push(s); done[s.id] = true; });
+      break;
+    }
+    pending.splice(0, pending.length);
+    next.forEach(s => pending.push(s));
+  }
+  return out;
+}
+
+function emitSchemasPython() {
+  if (!schemas.length) return '';
+  const ordered = topologicalSchemas();
+  const lines = [
+    '# schemas.py',
+    'from typing import List',
+    '',
+    'from pydantic import BaseModel, Field',
+    '',
+  ];
+  ordered.forEach(s => {
+    const parent = s.extendsId && schemaById(s.extendsId)
+      ? schemaClassName(schemaById(s.extendsId))
+      : 'BaseModel';
+    const cls = schemaClassName(s);
+    lines.push('');
+    lines.push('class ' + cls + '(' + parent + '):');
+    lines.push('    """' + String(s.name || cls).replace(/"/g, '\\"') + '."""');
+    const fields = (s.fields || []).filter(f => (f.key || '').trim());
+    if (!fields.length) lines.push('    pass');
+    fields.forEach(f => {
+      const py = pyTypeForField(f.type);
+      const desc = String(f.desc || f.key).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      lines.push('    ' + pyName(f.key, f.key) + ': ' + py + ' = Field(description="' + desc + '")');
+    });
+    lines.push('');
+  });
+  return lines.join('\n');
+}
+
+function llmSchemaClass(n) {
+  if (!n || !n.detail) return '';
+  const s = schemaById(n.detail.outputSchemaId);
+  return s ? schemaClassName(s) : '';
+}
+
+function uniqueNames(arr) {
+  const out = [];
+  (arr || []).forEach(x => {
+    const v = String(x || '').trim();
+    if (v && out.indexOf(v) < 0) out.push(v);
+  });
+  return out;
+}
+
+function handledSchemaClasses(n) {
+  return uniqueNames(((n && n.detail && n.detail.handlesSchemaIds) || []).map(id => {
+    const s = schemaById(id);
+    return s ? schemaClassName(s) : '';
+  }));
+}
+
+function toolCallMode(n) {
+  const args = (n && n.detail && n.detail.toolArgs) || [];
+  const first = args.find(a => a.param && a.fromKey) || args[0] || {};
+  return {
+    param: first.param || 'query',
+    fromKey: first.fromKey || '',
+    batch: !!(first.fromKey && isListStateKey(first.fromKey)),
+  };
+}
+
+function stopRoundsN(n) {
+  const d = (n && n.detail) || {};
+  function asInt(v) {
+    const num = parseInt(v, 10);
+    return Number.isFinite(num) ? num : null;
+  }
+  if (d.stopMaxMode === 'literal') {
+    const lit = asInt(d.stopMax);
+    if (lit != null) return lit;
+  }
+  const key = d.stopMax || (d.predRightMode !== 'literal' ? d.predRight : '') || 'max_iterations';
+  const fromState = asInt((stateVars.find(v => v.key === key) || {}).val);
+  if (fromState != null) return fromState;
+  if (d.predRightMode === 'literal') {
+    const lit = asInt(d.predRight);
+    if (lit != null) return lit;
+  }
+  return 2;
+}
+
+function emitToolInvokeLine(n, indent) {
+  const spec = catalogById(n.detail.toolId);
+  const callee = spec ? spec.varName : pyName(n.detail.tool, n.id);
+  const mode = toolCallMode(n);
+  const args = (n.detail.toolArgs || []).filter(a => a.param && a.fromKey);
+  if (mode.batch && mode.fromKey) {
+    const p = pyName(mode.param, 'query');
+    const k = pyName(mode.fromKey, mode.fromKey);
+    return indent + 'result = ' + callee + '.batch([{"' + p + '": item} for item in state["' + k + '"]])\n';
+  }
+  const pairs = args.map(a =>
+    '"' + pyName(a.param, a.param) + '": state["' + pyName(a.fromKey, a.fromKey) + '"]'
+  );
+  return indent + 'result = ' + callee + '.invoke({' + pairs.join(', ') + '})\n';
+}
+
+function emitRunQueriesPython(n, fnName) {
+  const spec = n && n.detail ? catalogById(n.detail.toolId) : null;
+  const callee = spec ? spec.varName : (n && n.detail && n.detail.tool ? pyName(n.detail.tool, n.id) : 'tavily');
+  const mode = toolCallMode(n || { detail: { toolArgs: [{ param: 'query', fromKey: 'search_queries' }] } });
+  const fnArg = pyName(mode.fromKey || 'input', 'input');
+  const toolParam = pyName(mode.param, 'query');
+  const lines = [
+    'def ' + fnName + '(' + fnArg + ': ' + (mode.batch ? 'list[str]' : 'str') + ', **kwargs):',
+    '    """Run the generated search queries."""',
+  ];
+  if (mode.batch) {
+    lines.push('    return ' + callee + '.batch([{"' + toolParam + '": item} for item in ' + fnArg + '])');
+  } else {
+    lines.push('    return ' + callee + '.invoke({"' + toolParam + '": ' + fnArg + '})');
+  }
+  return lines.join('\n');
+}
+
+function emitOutputPrintLines(indent) {
+  const ind = indent || '    ';
+  const lines = [
+    ind + 'last = result["messages"][-1]',
+    ind + 'args = (last.tool_calls or [{}])[0].get("args") or {}',
+  ];
+  const outs = graphOutputs.filter(o => (o.field || '').trim());
+  if (!outs.length) {
+    lines.push(ind + 'print(args.get("answer") or last.content)');
+    lines.push(ind + 'for ref in args.get("references") or []:');
+    lines.push(ind + '    print("-", ref)');
+    return lines;
+  }
+  outs.forEach(o => {
+    const field = String(o.field).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const s = schemaById(o.schemaId);
+    const f = schemaFields(s).find(x => x.key === o.field);
+    const isList = f && /^list/.test(String(f.type || ''));
+    if (isList) {
+      lines.push(ind + 'for item in args.get("' + field + '") or []:');
+      lines.push(ind + '    print("-", item)');
+    } else if (field === 'answer') {
+      lines.push(ind + 'print(args.get("' + field + '") or last.content)');
+    } else {
+      lines.push(ind + 'print(args.get("' + field + '"))');
+    }
+  });
+  return lines;
+}
+
 function generateReflexionCode() {
-  return [
+  const draftNode = findNodeByLabel('action', 'draft');
+  const reviseNode = findNodeByLabel('action', 'revise');
+  const toolsNode = findNodeByLabel('action', 'execute_tools');
+  const loopNode = findNodeByLabel('router', 'event_loop');
+  const draftCls = llmSchemaClass(draftNode) || 'AnswerQuestion';
+  const reviseCls = llmSchemaClass(reviseNode) || 'ReviseAnswer';
+  let handleNames = handledSchemaClasses(toolsNode);
+  if (!handleNames.length) handleNames = uniqueNames([draftCls, reviseCls]);
+  const schemaImport = uniqueNames(handleNames.concat([draftCls, reviseCls])).join(', ');
+  const spec = toolsNode && toolsNode.detail ? catalogById(toolsNode.detail.toolId) : catalogById('tavily');
+  const toolImport = (spec && spec.importLine) || 'from langchain_tavily import TavilySearch';
+  const toolVar = (spec && spec.varName) || 'tavily';
+  const toolConstruct = (spec && spec.construct) || 'TavilySearch(max_results=5)';
+  const maxN = stopRoundsN(loopNode);
+  const schemaPart = emitSchemasPython() || [
     '# schemas.py',
     'from typing import List',
     '',
@@ -3982,7 +4777,8 @@ function generateReflexionCode() {
     '        description="Citations motivating your updated answer"',
     '    )',
     '',
-    '',
+  ].join('\n');
+  const rest = [
     '# chains.py',
     'import datetime',
     '',
@@ -3993,7 +4789,7 @@ function generateReflexionCode() {
     'from langchain.chat_models import init_chat_model',
     'from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder',
     '',
-    'from schemas import AnswerQuestion, ReviseAnswer',
+    'from schemas import ' + draftCls + ', ' + reviseCls,
     '',
     'llm = init_chat_model("claude-sonnet-4-5", model_provider="anthropic")',
     '',
@@ -4014,7 +4810,7 @@ function generateReflexionCode() {
     '',
     'first_responder = actor_prompt_template.partial(',
     '    first_instruction="Provide a detailed ~250 word answer"',
-    ') | llm.bind_tools(tools=[AnswerQuestion], tool_choice="AnswerQuestion")',
+    ') | llm.bind_tools(tools=[' + draftCls + '], tool_choice="' + draftCls + '")',
     '',
     'revise_instructions = """Revise your previous answer using the new information.',
     '- Use the previous critique to add important information to your answer.',
@@ -4027,7 +4823,7 @@ function generateReflexionCode() {
     '',
     'revisor = actor_prompt_template.partial(',
     '    first_instruction=revise_instructions',
-    ') | llm.bind_tools(tools=[ReviseAnswer], tool_choice="ReviseAnswer")',
+    ') | llm.bind_tools(tools=[' + reviseCls + '], tool_choice="' + reviseCls + '")',
     '',
     '',
     '# tools_executor.py',
@@ -4036,23 +4832,22 @@ function generateReflexionCode() {
     'load_dotenv()',
     '',
     'from langchain_core.tools import StructuredTool',
-    'from langchain_tavily import TavilySearch',
+    toolImport,
     'from langgraph.prebuilt import ToolNode',
     '',
-    'from schemas import AnswerQuestion, ReviseAnswer',
+    'from schemas import ' + schemaImport,
     '',
-    'tavily_tool = TavilySearch(max_results=5)',
+    toolVar + ' = ' + toolConstruct,
     '',
     '',
-    'def run_queries(search_queries: list[str], **kwargs):',
-    '    """Run the generated search queries."""',
-    '    return tavily_tool.batch([{"query": query} for query in search_queries])',
+    emitRunQueriesPython(toolsNode, 'run_queries'),
     '',
     '',
     'execute_tools = ToolNode(',
     '    [',
-    '        StructuredTool.from_function(run_queries, name=AnswerQuestion.__name__),',
-    '        StructuredTool.from_function(run_queries, name=ReviseAnswer.__name__),',
+  ].concat(handleNames.map(cls =>
+    '        StructuredTool.from_function(run_queries, name=' + cls + '.__name__),'
+  )).concat([
     '    ]',
     ')',
     '',
@@ -4070,7 +4865,7 @@ function generateReflexionCode() {
     'from chains import first_responder, revisor',
     'from tools_executor import execute_tools',
     '',
-    'MAX_ITERATIONS = 2',
+    'MAX_ITERATIONS = ' + maxN,
     '',
     '',
     'def draft(state: MessagesState) -> dict:',
@@ -4086,7 +4881,7 @@ function generateReflexionCode() {
     '',
     '',
     'def event_loop(state: MessagesState) -> Literal["no", "si"]:',
-    '    """si: stop when tool visits reach MAX_ITERATIONS. no: search again."""',
+    '    """si: stop after N tool rounds. no: search again."""',
     '    tool_visits = sum(isinstance(item, ToolMessage) for item in state["messages"])',
     '    if tool_visits >= MAX_ITERATIONS:',
     '        return "si"',
@@ -4117,14 +4912,12 @@ function generateReflexionCode() {
     '            ]',
     '        }',
     '    )',
-    '    last = result["messages"][-1]',
-    '    args = (last.tool_calls or [{}])[0].get("args") or {}',
-    '    print(args.get("answer") or last.content)',
-    '    for ref in args.get("references") or []:',
-    '        print("-", ref)',
+  ]).concat(emitOutputPrintLines('    ')).concat([
     '',
-  ].join('\n');
+  ]).join('\n');
+  return String(schemaPart).replace(/\s+$/, '') + '\n\n' + rest;
 }
+
 
 function detectCodePattern() {
   if (isReactStyleGraph()) return 'react';
@@ -4135,42 +4928,71 @@ function detectCodePattern() {
 
 function emitToolsPythonBlock() {
   const list = toolNodes();
-  if (!list.length) return { extraImports: '', defs: '' };
+  if (!list.length) return { extraImports: '', defs: '', toolNodeVars: {} };
 
   const importLines = ['from langchain_core.tools import tool'];
   const seenCatalog = {};
   const seenCustom = {};
   const defs = ['# Tools are designed here; LangCanvas does not execute them.'];
+  const toolNodeVars = {};
+  let needStructured = false;
 
   list.forEach(n => {
     const spec = catalogById(n.detail.toolId);
     if (spec) {
-      if (seenCatalog[spec.id]) return;
-      seenCatalog[spec.id] = true;
-      spec.importLine.split('\n').forEach(line => {
-        if (importLines.indexOf(line) < 0) importLines.push(line);
-      });
-      defs.push(spec.varName + ' = ' + spec.construct);
-      return;
+      if (!seenCatalog[spec.id]) {
+        seenCatalog[spec.id] = true;
+        spec.importLine.split('\n').forEach(line => {
+          if (importLines.indexOf(line) < 0) importLines.push(line);
+        });
+        defs.push(spec.varName + ' = ' + spec.construct);
+      }
+    } else {
+      const fn = pyName(n.detail.tool, n.id);
+      if (!seenCustom[fn]) {
+        seenCustom[fn] = true;
+        const params = (n.detail.toolArgs || []).filter(a => a.param);
+        const sig = params.length
+          ? params.map(a => pyName(a.param, 'arg') + ': str').join(', ')
+          : 'input: str';
+        const doc = String(n.detail.toolDesc || 'Custom tool.').replace(/"""/g, "''");
+        defs.push('');
+        defs.push('@tool');
+        defs.push('def ' + fn + '(' + sig + ') -> str:');
+        defs.push('    """' + doc + '"""');
+        defs.push('    raise NotImplementedError("Custom tool: implement ' + fn + '")');
+      }
     }
-    const fn = pyName(n.detail.tool, n.id);
-    if (seenCustom[fn]) return;
-    seenCustom[fn] = true;
-    const params = (n.detail.toolArgs || []).filter(a => a.param);
-    const sig = params.length
-      ? params.map(a => pyName(a.param, 'arg') + ': str').join(', ')
-      : 'input: str';
-    const doc = String(n.detail.toolDesc || 'Custom tool.').replace(/"""/g, "''");
+
+    const handles = handledSchemaClasses(n);
+    if (!handles.length) return;
+    needStructured = true;
+    const fnName = pyName(n.label, n.id) === 'execute_tools' ? 'run_queries' : ('run_' + pyName(n.label, n.id));
+    const varName = pyName(n.label, n.id);
+    defs.push('# runs when LLM returns: ' + handles.join(', '));
+    defs.push(emitRunQueriesPython(n, fnName));
     defs.push('');
-    defs.push('@tool');
-    defs.push('def ' + fn + '(' + sig + ') -> str:');
-    defs.push('    """' + doc + '"""');
-    defs.push('    raise NotImplementedError("Custom tool: implement ' + fn + '")');
+    defs.push(varName + ' = ToolNode([');
+    handles.forEach(cls => {
+      defs.push('    StructuredTool.from_function(' + fnName + ', name=' + cls + '.__name__),');
+    });
+    defs.push('])');
+    toolNodeVars[n.id] = varName;
   });
+
+  if (needStructured) {
+    const toolImp = importLines.indexOf('from langchain_core.tools import tool');
+    if (toolImp >= 0) importLines[toolImp] = 'from langchain_core.tools import tool, StructuredTool';
+    else importLines.push('from langchain_core.tools import StructuredTool');
+    if (importLines.indexOf('from langgraph.prebuilt import ToolNode') < 0) {
+      importLines.push('from langgraph.prebuilt import ToolNode');
+    }
+  }
 
   return {
     extraImports: importLines.join('\n') + '\n',
     defs: defs.join('\n') + '\n\n',
+    toolNodeVars: toolNodeVars,
   };
 }
 
@@ -4190,27 +5012,48 @@ function buildLocalSkeletonCode() {
 
   const stateKeys = stateVars.map(v => (v.key || '').trim()).filter(Boolean);
   const toolsPy = emitToolsPythonBlock();
+  const schemaPy = emitSchemasPython();
+  const needsToolMsg = Object.values(nodes).some(n => n.type === 'router' && n.detail && n.detail.stopMode === 'tool_rounds');
   let code = 'from typing import TypedDict, Literal\n';
   code += 'from langgraph.graph import StateGraph, START, END\n';
+  if (needsToolMsg) code += 'from langchain_core.messages import ToolMessage\n';
   if (toolsPy.extraImports) code += toolsPy.extraImports;
+  if (schemaPy) code += 'from pydantic import BaseModel, Field\nfrom typing import List\n';
   code += '\n\n';
+  if (schemaPy) code += schemaPy + '\n';
   code += 'class State(TypedDict):\n';
-  if (stateKeys.length) stateKeys.forEach(k => { code += '    ' + pyName(k, k) + ': str\n'; });
-  else code += '    pass\n';
+  if (stateKeys.length) {
+    stateKeys.forEach(k => {
+      const row = stateVars.find(v => v.key === k);
+      const t = (row && row.type) || inferStateType(k);
+      const py = t === 'int' ? 'int' : t === 'bool' ? 'bool' : t === 'list' || t === 'messages' ? 'list' : 'str';
+      code += '    ' + pyName(k, k) + ': ' + py + '\n';
+    });
+  } else code += '    pass\n';
   code += '\n\n';
   if (toolsPy.defs) code += toolsPy.defs;
 
   Object.values(nodes).forEach(n => {
     if (n.type !== 'action') return;
+    if (toolsPy.toolNodeVars && toolsPy.toolNodeVars[n.id]) {
+      const handles = handledSchemaClasses(n);
+      code += '# ' + nameOf[n.id] + ' is a ToolNode (runs when LLM returns ' + handles.join(', ') + ')\n\n';
+      return;
+    }
     code += 'def ' + nameOf[n.id] + '(state: State) -> dict:\n';
     code += '    # ' + (n.effect ? n.effect : 'TODO: implement this step') + '\n';
     if (n.detail && n.detail.kind === 'tool') {
-      const spec = catalogById(n.detail.toolId);
-      const argPairs = (n.detail.toolArgs || []).filter(a => a.param && a.fromKey).map(a =>
-        '"' + pyName(a.param, a.param) + '": state["' + pyName(a.fromKey, a.fromKey) + '"]'
-      );
-      const callee = spec ? spec.varName : pyName(n.detail.tool, n.id);
-      code += '    result = ' + callee + '.invoke({' + argPairs.join(', ') + '})\n';
+      const handles = handledSchemaClasses(n);
+      if (handles.length) {
+        code += '    # runs when LLM returns: ' + handles.join(', ') + '\n';
+      }
+      code += emitToolInvokeLine(n, '    ');
+    }
+    if (n.detail && n.detail.kind === 'llm') {
+      const cls = llmSchemaClass(n);
+      if (cls && n.detail.bindTools !== false) {
+        code += '    # structured output: bind_tools(tools=[' + cls + '], tool_choice="' + cls + '")\n';
+      }
     }
     code += '    return {}\n\n\n';
   });
@@ -4221,6 +5064,19 @@ function buildLocalSkeletonCode() {
     const labels = outs.map((e, i) => branchKey(e, i));
     const literal = labels.length ? labels.map(l => '"' + l + '"').join(', ') : '"END"';
     code += 'def route_' + nameOf[n.id] + '(state: State) -> Literal[' + literal + ']:\n';
+    if (n.detail && n.detail.stopMode === 'tool_rounds') {
+      const N = stopRoundsN(n);
+      const siIdx = outs.findIndex(e => String(e.label || '').trim().toLowerCase() === 'si');
+      const noIdx = outs.findIndex(e => String(e.label || '').trim().toLowerCase() === 'no');
+      const stopE = siIdx >= 0 ? outs[siIdx] : outs[0];
+      const contE = noIdx >= 0 ? outs[noIdx] : (outs[1] || outs[0]);
+      code += '    # stop after N tool rounds (N=' + N + ')\n';
+      code += '    tool_visits = sum(isinstance(item, ToolMessage) for item in state.get("messages", []))\n';
+      code += '    if tool_visits >= ' + N + ':\n';
+      code += '        return "' + (stopE ? branchKey(stopE, outs.indexOf(stopE)) : 'END') + '"\n';
+      code += '    return "' + (contE ? branchKey(contE, outs.indexOf(contE)) : 'END') + '"\n\n\n';
+      return;
+    }
     code += '    # ' + (n.label ? 'decide based on: ' + n.label : 'decide the next route based on the state') + '\n';
     outs.forEach((e, i) => {
       const cond = i === 0 ? 'if' : 'elif';
@@ -4265,6 +5121,14 @@ function buildLocalSkeletonCode() {
     });
   });
   code += '\ngraph = builder.compile()\n';
+  if (graphOutputs.length) {
+    code += '\n# graph output (last structured reply)\n';
+    graphOutputs.forEach(o => {
+      const s = schemaById(o.schemaId);
+      const name = s ? schemaClassName(s) : 'schema';
+      code += '#   ' + (o.key || o.field || 'field') + ' ← ' + name + '.' + (o.field || '') + '\n';
+    });
+  }
   return code;
 }
 
@@ -4643,6 +5507,7 @@ function showResults(html) {
 buildMarkerDefs();
 ensureStartNode();
 addStateRow('attempts', '0');
+renderSchemas();
 renderNodes();
 
 const canvasEl = document.getElementById('canvas');
