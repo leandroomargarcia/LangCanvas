@@ -17,6 +17,8 @@
     --line: #E4E2EF;
     --line-strong: #C7C4DC;
     --accent: #6C5CE0;
+    --side-w: 248px;
+    --assist-w: 300px;
   }
   body { margin: 16px; background: var(--paper); height: 100%; overflow: hidden; }
   html { height: 100%; }
@@ -83,17 +85,53 @@
     border-radius: 7px; border: 1px solid var(--line-strong); background: var(--card);
   }
   .lg-body {
-    display: flex; gap: 12px; align-items: stretch;
+    display: flex; gap: 0; align-items: stretch;
     flex: 1; min-height: 0; overflow: hidden;
   }
   .lg-side {
-    width: 248px; flex-shrink: 0;
+    width: var(--side-w); flex-shrink: 0;
     display: flex; flex-direction: column; gap: 10px;
     max-height: 100%; overflow-y: auto;
+    padding-right: 4px;
   }
+  .lg-split {
+    flex: 0 0 10px;
+    width: 10px;
+    align-self: stretch;
+    position: relative;
+    z-index: 6;
+    cursor: ew-resize;
+    touch-action: none;
+    background: transparent;
+  }
+  .lg-split::after {
+    content: '';
+    position: absolute;
+    top: 16px; bottom: 16px;
+    left: 4px;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--line-strong);
+    opacity: 0.7;
+    pointer-events: none;
+    transition: background .12s ease, opacity .12s ease, width .12s ease, left .12s ease;
+  }
+  .lg-split:hover::after,
+  .lg-split:focus-visible::after,
+  .lg-split.dragging::after,
+  body.lg-splitting .lg-split.dragging::after {
+    background: var(--accent);
+    opacity: 1;
+    width: 3px;
+    left: 3.5px;
+  }
+  .lg-split-assist { display: none; }
+  .lg-body.assist-open .lg-split-assist { display: block; }
+  body.lg-splitting { cursor: ew-resize; user-select: none; }
+  body.lg-splitting iframe { pointer-events: none; }
   .lg-assist {
     display: none;
-    width: 300px; flex-shrink: 0;
+    width: var(--assist-w); flex-shrink: 0;
     flex-direction: column;
     align-self: stretch;
     min-height: 0;
@@ -102,7 +140,7 @@
     overflow: hidden;
   }
   .lg-body.assist-open .lg-assist { display: flex; }
-  body.assist-open .lg-zoom-glass { right: 336px; }
+  body.assist-open .lg-zoom-glass { right: calc(var(--assist-w) + 36px); }
   .lg-assist-head {
     display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
     padding: 12px 12px 8px; border-bottom: 1px solid var(--paper-line);
@@ -294,7 +332,7 @@
   .lg-log .step-n { color: var(--accent); font-weight: 600; }
   .lg-warn { color: #B84B3E; font-size: 12.5px; margin-top: 4px; }
   .lg-canvas-stage {
-    flex: 1; min-width: 0; min-height: 0;
+    flex: 1; min-width: 280px; min-height: 0;
     height: auto; align-self: stretch;
     position: relative;
     display: flex;
@@ -792,7 +830,7 @@
   </div>
 
   <div class="lg-body" id="lg-body">
-    <div class="lg-side">
+    <div class="lg-side" id="lg-side">
       <div class="lg-panel">
         <h3>problem to solve</h3>
         <textarea id="problem-desc" placeholder="Describe what problem this graph is meant to solve (e.g. 'an agent that answers questions about invoices, searching a database and retrying if it finds nothing')" style="width:100%; min-height:64px; font-family:inherit; font-size:12.5px; padding:7px 8px; border:1px solid var(--line-strong); border-radius:6px; background:var(--paper); resize:vertical;"></textarea>
@@ -834,6 +872,8 @@
       </div>
     </div>
 
+    <div class="lg-split lg-split-side" id="split-side" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize. Double-click to reset." tabindex="0"></div>
+
     <div class="lg-canvas-stage">
     <div class="lg-canvas-outer" id="canvas-outer">
       <aside id="critique-panel" class="lg-critique-panel" hidden>
@@ -859,6 +899,7 @@
       </svg>
     </button>
     </div>
+    <div class="lg-split lg-split-assist" id="split-assist" role="separator" aria-orientation="vertical" aria-label="Resize assistant" title="Drag to resize. Double-click to reset." tabindex="0"></div>
     <aside class="lg-assist" id="assist-panel" aria-label="Design assistant">
       <div class="lg-assist-head">
         <div>
@@ -869,12 +910,12 @@
       </div>
       <div class="lg-assist-msgs" id="assist-msgs"></div>
       <div class="lg-assist-chips" id="assist-chips">
-        <button type="button" onclick="askAssistant('What is still missing to complete this system?')">What is missing?</button>
-        <button type="button" onclick="askAssistant('Which template fits this job, and how do I build it step by step?')">Which template?</button>
-        <button type="button" onclick="askAssistant('Walk me through the next step to finish the graph I have.')">Next step</button>
+        <button type="button" onclick="askAssistant('next')">Next step</button>
+        <button type="button" onclick="askAssistant('I am stuck on this step. Walk me through the exact clicks and fields.')">I am stuck</button>
+        <button type="button" onclick="askAssistant('Why does this step exist? Explain the engineering reason, then remind me what to do.')">Why this?</button>
       </div>
       <form class="lg-assist-compose" onsubmit="sendAssistant(event)">
-        <textarea id="assist-input" placeholder="Ask how to finish this graph…" rows="2" onkeydown="assistKeydown(event)"></textarea>
+        <textarea id="assist-input" placeholder="Say next when the step is done…" rows="2" onkeydown="assistKeydown(event)"></textarea>
         <button type="submit" class="lg-btn primary" id="assist-send">send</button>
       </form>
     </aside>
@@ -5713,7 +5754,7 @@ function compactGraphForCoach() {
     schemas: (g.schemas || []).map(s => ({
       name: s.name,
       extends: s.extendsId ? (schemaName[s.extendsId] || s.extendsId) : '',
-      fields: (s.fields || []).map(f => ({ key: f.key, type: f.type })),
+      fields: (s.fields || []).map(f => ({ key: f.key, type: f.type, desc: f.desc || '' })),
     })),
     outputs: (g.outputs || []).map(o => ({
       key: o.key,
@@ -5804,19 +5845,422 @@ function coachGaps(g) {
   return gaps;
 }
 
+function isAdvanceQuestion(q) {
+  const s = String(q || '').trim().toLowerCase();
+  if (!s) return false;
+  return /^(next|dale|listo|ok+|okay|yes|s[ií]|ya|done|continue|continua|contin[uú]a|segu[ií]|go)[\s!.]*$/.test(s)
+    || /^(siguiente|next step|walk me through the next)/.test(s);
+}
+
+function isStuckQuestion(q) {
+  const s = String(q || '').trim().toLowerCase();
+  return /stuck|help me|ayudame|ay[uú]dame|no me sale|no estoy seguro|how do i|exact|clicks|completar|fill the/.test(s);
+}
+
+function isWhyQuestion(q) {
+  const s = String(q || '').trim().toLowerCase();
+  return /why (does|this|do we)|por qu[eé]|explain the engineering/.test(s);
+}
+
+function canvasBlob(g) {
+  const problem = (g.problem || '').toLowerCase();
+  const labels = (g.nodes || []).map(n => (n.label || '').toLowerCase()).join(' ');
+  const schemas = (g.schemas || []).map(s => (s.name || '').toLowerCase()).join(' ');
+  return problem + ' ' + labels + ' ' + schemas;
+}
+
+function looksReflexion(g) {
+  const blob = canvasBlob(g);
+  return /reflexion/.test(blob)
+    || /answerquestion|reviseanswer/.test(blob)
+    || /(draft|revise|execute_tools|event_loop)/.test(blob)
+    || (/(propos|hypothes)/.test(blob) && /(investig|search|tavily)/.test(blob) && /revis/.test(blob));
+}
+
+function looksReact(g) {
+  const blob = canvasBlob(g);
+  return /\breact\b/.test(blob) || /tools_condition/.test(blob);
+}
+
+function stateKey(g, name) {
+  const want = String(name || '').toLowerCase();
+  return (g.state || []).find(v => (v.key || '').toLowerCase() === want) || null;
+}
+
+function schemaFields(s) {
+  return ((s && s.fields) || []).filter(f => (f.key || '').trim());
+}
+
+function actionFlow(g) {
+  const nodes = g.nodes || [];
+  const edges = g.edges || [];
+  const byLabel = {};
+  nodes.forEach(n => { byLabel[n.label] = n; });
+  const ordered = [];
+  const seen = {};
+  const queue = [];
+  const start = nodes.find(n => n.type === 'start');
+  if (start) queue.push(start.label);
+  while (queue.length) {
+    const lab = queue.shift();
+    if (seen[lab]) continue;
+    seen[lab] = true;
+    const n = byLabel[lab];
+    if (n && n.type === 'action') ordered.push(n);
+    edges.filter(e => e.from === lab).forEach(e => queue.push(e.to));
+  }
+  nodes.forEach(n => {
+    if (n.type === 'action' && !seen[n.label]) ordered.push(n);
+  });
+  return ordered;
+}
+
+function findAction(g, re) {
+  return (g.nodes || []).find(n => n.type === 'action' && re.test(n.label || ''));
+}
+
+function nodeConnected(g, label) {
+  return (g.edges || []).some(e => e.from === label || e.to === label);
+}
+
+function lesson(id, n, title, why, steps, extra) {
+  const row = {
+    id: id,
+    n: n,
+    title: title,
+    why: why,
+    do: steps,
+    then: 'When that is done, say next.',
+    stuck: !!(extra && extra.stuck),
+    pattern: extra && extra.pattern,
+  };
+  if (extra && extra.then) row.then = extra.then;
+  return row;
+}
+
+function reflexionRoles(g) {
+  const flow = actionFlow(g);
+  const proposer = findAction(g, /draft|propos|generat|first|hypothes|writer/)
+    || flow[0]
+    || (g.nodes || []).find(n => n.type === 'action');
+  const researcher = (g.nodes || []).find(n => n.type === 'action' && n.kind === 'tool')
+    || findAction(g, /tool|search|tavily|investig|retriev|web|execute/);
+  const reviser = findAction(g, /revis|refin|improve|revisor/)
+    || flow.filter(n => n !== proposer && n !== researcher).find(n => n.kind === 'llm')
+    || flow.find(n => n !== proposer && n !== researcher);
+  return { proposer: proposer, researcher: researcher, reviser: reviser };
+}
+
+function detectLesson(g, question) {
+  const stuck = isStuckQuestion(question);
+  const actions = (g.nodes || []).filter(n => n.type === 'action');
+  const routers = (g.nodes || []).filter(n => n.type === 'router');
+  const ends = (g.nodes || []).filter(n => n.type === 'end');
+  const schemas = g.schemas || [];
+  const filledSchemas = schemas.filter(s => schemaFields(s).length > 0);
+  const problem = (g.problem || '').trim();
+  const reflexion = looksReflexion(g) || /reflexion/.test(String(question || '').toLowerCase());
+  const pattern = reflexion ? 'reflexion' : (looksReact(g) ? 'react' : '');
+  const extra = { stuck: stuck, pattern: pattern };
+
+  if (!problem) {
+    return lesson('job', 1, 'The job, not the graph',
+      reflexion
+        ? 'A single LLM shot hallucinates and does not correct itself. Reflexion exists so the model critiques, fetches evidence, and rewrites. That is a cycle of improvement, not more boxes.'
+        : 'If you cannot say what enters, what the user should get, and what must improve, the diagram will be decoration. The graph comes last.',
+      reflexion
+        ? [
+            'In “problem to solve”, write the work in your words: given a question, return an answer grounded in evidence, improved at least once.',
+            'In your head (not on the canvas yet): propose → critique → investigate → revise → did we gather enough evidence?',
+            'Do not add schemas, state keys, or nodes in this step.',
+          ]
+        : [
+            'Write the job in “problem to solve”: what comes in, what the user should get, and what the system must improve or decide.',
+            'Name the cycle in one sentence (retry? retrieve then generate? critique and search?). Still no boxes.',
+            'Do not copy a template recipe of node names.',
+          ],
+      extra);
+  }
+
+  if (actions.length === 0) {
+    return lesson('roles', 2, 'Roles and arrows',
+      'Each role exists because the previous one fails at something. Until you can say who hands what to whom, schemas are a guess.',
+      reflexion
+        ? [
+            'Four roles: propose a first hypothesis; investigate (the critique alone changes nothing); revise with that evidence; decide when the evidence budget is spent.',
+            'Draw it: start → propose → investigate → revise → a conditional. From the conditional, continue → investigate; stop → end.',
+            'Label the boxes as roles, not as library names. Skip schemas and tools for now.',
+          ]
+        : [
+            'Draw the roles as action boxes and connect them. If the job loops, add a conditional with two labeled exits and an end.',
+            'Double-click each action and write the effect: one sentence of what that role does to the work.',
+            'Still no schemas. If you cannot say out loud what one box hands the next, do not draw more.',
+          ],
+      extra);
+  }
+
+  const missingEffect = actions.find(n => !(n.effect || '').trim());
+  if (missingEffect) {
+    return lesson('effects', 3, 'What each role does',
+      'The label is who. The effect (the italic line under the name) is what it changes. That is not the payload on the arrow — it is the job of the box, in one phrase.',
+      [
+        'Double-click “' + missingEffect.label + '”. The field “what does it change in the state?” is the effect.',
+        'Write one short sentence (e.g. “writes a hypothesis and what to search”, “brings evidence from outside”).',
+        'Repeat for every action. Conditionals: label the outgoing arrows (continue vs stop), not an effect.',
+      ],
+      extra);
+  }
+
+  if (!ends.length) {
+    return lesson('end', 3, 'A place to stop',
+      'Without an end, the run has nowhere to finish. The end does not compute — it only cuts.',
+      ['Add an + end node.', 'Draw an arrow from the last decision (or last action) into end.', 'Label that arrow if it is a branch of a conditional.'],
+      extra);
+  }
+
+  const dangling = actions.concat(routers).find(n => !nodeConnected(g, n.label));
+  if (dangling) {
+    return lesson('connect', 3, 'Finish the loop on the canvas',
+      'An unconnected role is not part of the system. The dictionary only exists along arrows.',
+      [
+        'Connect “' + dangling.label + '” to the role that must run before or after it.',
+        'Read the path from start to end out loud. If a loop exists, both branches of the conditional must go somewhere.',
+      ],
+      extra);
+  }
+
+  if (routers.length === 0 && actions.length >= 2 && (reflexion || /loop|revis|retry|until/.test(canvasBlob(g)))) {
+    return lesson('draw_loop', 3, 'Who decides to continue',
+      'A loop that cannot stop is not a design. Someone has to cut when the budget is spent — that is a conditional, not another LLM.',
+      [
+        'Add + conditional after the last improving role.',
+        'Two arrows: continue (back to the work that fetches or retries) and stop (to end). Label both.',
+      ],
+      extra);
+  }
+
+  const needsContract = reflexion || actions.some(n => n.kind === 'llm') || actions.length >= 2;
+  const hasNested = filledSchemas.some(s => schemaFields(s).some(f => filledSchemas.some(o => o.name === f.type)));
+  const hasExtends = filledSchemas.some(s => s.extends);
+  const thinSchemas = filledSchemas.length > 0 && filledSchemas.length < 2 && reflexion;
+
+  if (needsContract && filledSchemas.length === 0) {
+    const payloadWhy = 'The boxes say who acts. Each arrow must carry a named payload or it is extra. The contract is those payloads frozen — so a tool can execute queries and you can extract the user-facing answer. Free text cannot do that.';
+    if (stuck && reflexion) {
+      return lesson('schemas', 4, 'Freeze the handoffs as a contract',
+        payloadWhy,
+        [
+          'SCHEMAS → + schema. Name it for the critique (two fields: missing str, superfluous str). This object does not go to the user; it feeds the queries.',
+          '+ schema for the proposal: answer (str), reflection (type = the critique schema, not str), search_queries (list[str]). One object, because one LLM shot must return hypothesis + critique + what to search.',
+          '+ schema for the revision: extends the proposal; add only references (list[str]). Do not copy the other fields. extends means the revision is the proposal plus citations.',
+        ],
+        extra);
+    }
+    return lesson('schemas', 4, 'Freeze the handoffs as a contract',
+      payloadWhy,
+      reflexion
+        ? [
+            'Walk each arrow and name the datum: question in; queries to investigate; evidence to revise; a countable “how many searches already”; answer + citations out.',
+            'Then panel SCHEMAS: a small critique object (what is missing vs what is extra); a proposal object (answer + that critique + a list of queries); a revision that extends the proposal and only adds citations.',
+            'Queries and citations are lists. The revision must extend the proposal — same shape, plus evidence — so the search node can be reused.',
+          ]
+        : [
+            'For each arrow, name the payload (not the node). String, list, or object with parts?',
+            'If an LLM must return that shape, add it in SCHEMAS. If two shots share a shape and the second adds fields, use extends — do not duplicate.',
+            'Do not copy every field into shared state. That comes next.',
+          ],
+      extra);
+  }
+
+  if (thinSchemas || (reflexion && filledSchemas.length && (!hasExtends || !hasNested))) {
+    return lesson('schemas_shape', 4, 'The revision is the proposal plus evidence',
+      'If the two LLM shots do not share a shape, the search node and the output cannot reuse the same fields. extends is the design, not decoration.',
+      stuck
+        ? [
+            'Keep a small critique schema, a proposal schema that nests it, and a revision schema that extends the proposal with a references list.',
+            'In the proposal, the critique field’s type must be the critique schema (dropdown), not str.',
+            'On the revision, set extends to the proposal. Add only the new field.',
+          ]
+        : [
+            'You have schemas started. Check three things: a nested critique (type = another schema), a list for queries, and a revision that extends the proposal instead of copying fields.',
+            'Fix the shape before wiring nodes. A wrong contract makes the graph lie.',
+          ],
+      extra);
+  }
+
+  const hasMessages = !!stateKey(g, 'messages');
+  const queryKey = (g.state || []).find(v => v.type === 'list' && /quer|search/.test((v.key || '').toLowerCase()));
+  const hasCap = (g.state || []).some(v => /max|iter|round|budget/.test((v.key || '').toLowerCase()) && v.type === 'int');
+  const onlyAttempts = (g.state || []).length <= 1 && stateKey(g, 'attempts');
+
+  if ((reflexion || actions.some(n => n.kind === 'llm' || n.kind === 'tool')) && (!hasMessages || (reflexion && (!queryKey || !hasCap)) || onlyAttempts)) {
+    return lesson('state', 5, 'Memory, not a copy of the schema',
+      'A schema is a snapshot of one model shot. State is what the next node still needs to see. If you duplicate answer/missing/superfluous into state, you get two sources of truth.',
+      stuck && reflexion
+        ? [
+            'Shared state: keep messages (type messages, val []). That is the thread: question, each LLM shot, each tool result.',
+            'Project search_queries as type list (val []) so the tool can batch. Add max_iterations as int (e.g. 2) for the stop budget.',
+            'Delete leftover keys like attempts. Do not add answer or critique fields to state.',
+          ]
+        : [
+            'Ask per node: what must already exist when I start, that is not “this schema right now”?',
+            'Agent graphs almost always need messages (the thread). Project onto state only what a tool must read (a list key if it batches) and what the conditional counts.',
+            'Remove keys that only exist because a template leftover (often attempts).',
+          ],
+      extra);
+  }
+
+  const roles = reflexion ? reflexionRoles(g) : { proposer: actionFlow(g)[0], researcher: actions.find(n => n.kind === 'tool'), reviser: null };
+  if (roles.proposer && (roles.proposer.kind !== 'llm' || !roles.proposer.outputSchema)) {
+    const name = roles.proposer.label;
+    const proposalHit = filledSchemas.find(s => schemaFields(s).some(f => /answer|content|text/.test(f.key || ''))) || filledSchemas[filledSchemas.length - 1];
+    const proposalSchema = proposalHit ? proposalHit.name : 'the proposal schema';
+    return lesson('wire_propose', 6, 'The proposer must return the contract',
+      'The schema is still paper until a node is told “you fill this”. The first writer is an LLM, not a function: if it returns a paragraph, the next role has nothing to search.',
+      [
+        'Click “' + name + '”. NODE DETAIL → kind LLM (not function).',
+        'Output schema: the proposal contract (“' + proposalSchema + '”) — not the revision (that shot happens after evidence). Leave bind_tools on so it cannot slip into free text.',
+        'Reads: messages. Writes: messages append (the thread grows), and set the queries list key so the next node can read it.',
+      ],
+      extra);
+  }
+
+  if (roles.researcher && (roles.researcher.kind !== 'tool' || !roles.researcher.tool || (filledSchemas.length && !(roles.researcher.handles || []).length))) {
+    const name = roles.researcher.label;
+    return lesson('wire_tool', 7, 'Investigation is a tool, not an LLM',
+      'If this box were an LLM, it would “search” from memory. The outside world is a tool. In this pattern the model does not say “call the search tool” — it returns an object with queries, and that object is the call.',
+      stuck
+        ? [
+            'Click “' + name + '”. Kind: tool. Pick the web search from the catalog. Map query to the list key in state (batch, not one string).',
+            'Tick “runs when LLM returns” for BOTH the proposal schema and the revision schema. If you only tick the first, the second round never searches.',
+            'Reads: the queries key. Writes: messages append — evidence must enter the thread or revise cannot see snippets.',
+          ]
+        : [
+            'Click “' + name + '”. Kind: tool. Pick the catalog tool and map each arg to a state key. A list key means batch.',
+            'If an LLM returns a structured schema this tool should handle, tick those schemas under “runs when LLM returns” — every shot that produces queries, not only the first.',
+            'Write the evidence back into messages so the next LLM can see it.',
+          ],
+      extra);
+  }
+
+  if (reflexion && roles.reviser && roles.reviser !== roles.proposer && (roles.reviser.kind !== 'llm' || !roles.reviser.outputSchema || roles.reviser.outputSchema === (roles.proposer && roles.proposer.outputSchema))) {
+    const name = roles.reviser.label;
+    const revSchema = (filledSchemas.find(s => s.extends) || {}).name || 'the revision schema';
+    return lesson('wire_revise', 8, 'Revise with evidence, under a richer contract',
+      'This node exists so you do not ask the same model the same thing twice. Now the thread has snippets. The contract must have a place for citations — if you reuse the proposal schema, “grounded” has nowhere to live.',
+      [
+        'Click “' + name + '”. Kind: LLM. Output schema: “' + revSchema + '”, not the proposal schema again.',
+        'Reads: messages (draft + tool results). Writes: messages append, and set the queries list again — if the loop continues, the tool reads state, not the old queries.',
+        'System line: rewrite with the evidence, cite sources, and if something is still missing propose new queries.',
+      ],
+      extra);
+  }
+
+  const unwired = actionFlow(g).find(n => {
+    if (n.kind === 'llm') return !n.outputSchema;
+    if (n.kind === 'tool') return !n.tool;
+    return n.kind === 'function';
+  });
+  if (unwired) {
+    return lesson('wire_node', 6, 'Wire “' + unwired.label + '”',
+      'A box with no kind is a label, not a design. Decide whether this role thinks (LLM), talks to the world (tool), or is deterministic (function).',
+      [
+        'Click “' + unwired.label + '”. Set kind to match the role.',
+        'If LLM: pick the output schema it must fill. If tool: pick the tool and map args from state.',
+        'Reads / writes: only the keys this role truly needs. Prefer appending to messages rather than cloning schema fields.',
+      ],
+      extra);
+  }
+
+  const weakRouter = routers.find(n => {
+    const outs = (g.edges || []).filter(e => e.from === n.label);
+    if (outs.length < 2) return true;
+    if (n.stopMode === 'predicate' && !(n.condition || '').trim() && reflexion) return true;
+    if (reflexion && n.stopMode !== 'tool_rounds') return true;
+    if (n.stopMode === 'tool_rounds' && !n.stopMax) return true;
+    return false;
+  });
+  if (weakRouter) {
+    return lesson('stop', 9, 'Stop on a budget, not on “is it good?”',
+      'The model can always ask for another search. The cut is a countable evidence budget. The thread already is the counter — you count tool results, you do not store a parallel visits field unless the pattern needs it.',
+      reflexion
+        ? [
+            'Click “' + weakRouter.label + '”. Stop when: N tool rounds (not a state predicate). N = the max-iterations state key.',
+            'Continue branch → the investigate node. Stop branch → end. If those arrows are swapped, the agent dies on the first critique and never uses the second round of evidence.',
+            'With N = 2 the run is propose → investigate → revise → investigate → revise → end.',
+          ]
+        : [
+            'Click “' + weakRouter.label + '”. Give it a real stop: tool requested? attempts vs max? human approve? plan index done?',
+            'Label both outgoing arrows so continue and stop cannot be swapped.',
+          ],
+      extra);
+  }
+
+  if (!(g.outputs || []).length && actions.some(n => n.kind === 'llm')) {
+    const outSchema = ((filledSchemas.find(s => s.extends) || filledSchemas[filledSchemas.length - 1] || {}).name) || 'the last structured schema';
+    return lesson('output', 10, 'What the graph returns',
+      'End does not calculate anything. It only cuts. If you do not declare the outputs, generated code prints the last raw message and you mix critique, queries, and prose.',
+      reflexion
+        ? [
+            'Panel OUTPUT → + output twice: the answer field and the citations field of “' + outSchema + '”.',
+            'Do not export missing, superfluous, or search queries. That was internal fuel. The job was a grounded answer.',
+            'Use the revision schema, not the proposal: if you cut after the draft, there are no citations.',
+          ]
+        : [
+            'Panel OUTPUT: map the user-facing fields of the last structured reply.',
+            'Leave internal fuel (critiques, search queries, plan leftovers) off the panel unless the user should see them.',
+          ],
+      extra);
+  }
+
+  const gaps = coachGaps(g);
+  if (gaps.length) {
+    return lesson('sanity', 11, 'One remaining hole',
+      'The skeleton is up. Finish the dictionary before Generate code, or the code will invent what the canvas did not say.',
+      [gaps[0], 'Fix only this. Then say next and we check again.'],
+      extra);
+  }
+
+  return lesson('done', 12, 'The design is the contract',
+    'Job → loop → contracts → memory → each role wired → stop → output. Generate code should translate this canvas, not invent fields.',
+    [
+      'Sanity: proposer LLM + proposal schema; researcher tool handling both schemas; reviser LLM + revision schema; stop = N tool rounds; output = user-facing fields only.',
+      'When that matches, Export → Generate code. Read the files against this diagram. If the code adds a field the canvas does not have, the dictionary is still incomplete.',
+    ],
+    Object.assign({}, extra, { then: 'Ask if you want a review of a specific node, or generate code.' }));
+}
+
+function formatLesson(row) {
+  if (!row) return '';
+  const lines = [];
+  lines.push('**Why:** ' + row.why);
+  lines.push('');
+  lines.push('**Do this:**');
+  (row.do || []).forEach((d, i) => lines.push((i + 1) + '. ' + d));
+  lines.push('');
+  lines.push('**Then:** ' + (row.then || 'When that is done, say next.'));
+  return lines.join('\n');
+}
+
+function openingCoachMessage() {
+  const g = compactGraphForCoach();
+  const row = detectLesson(g, '');
+  return 'I will walk you like an engineer: one step, why it exists, then what to do on the canvas. Say **next** when it is done — or **I am stuck** for the exact fields.\n\n' + formatLesson(row);
+}
+
 const CANVAS_TEMPLATES = [
   { keys: ['simple', 'branch'], name: 'Simple branch', flow: 'start → decision → path A | path B', next: 'Draw one conditional with two labeled exits, then an action on each path and an end.' },
   { keys: ['retry', 'repair'], name: 'Retry / repair', flow: 'try → evaluate → retry or end', next: 'Add an attempts counter in state. The conditional retries while attempts < max, otherwise end.' },
   { keys: ['react'], name: 'ReAct', flow: 'agent → tools_condition → tools → agent', next: 'One LLM (agent) plus a tools node. The conditional asks: did the model request a tool? Yes → tools; no → end. Loop tools back to the agent.' },
-  { keys: ['reflection'], name: 'Reflection', flow: 'generate → critique → refine or finish', next: 'Two LLM nodes (draft and critique). Stop with a predicate or max iterations — no web search in this pattern.' },
-  { keys: ['reflexion'], name: 'Reflexion', flow: 'draft → execute_tools → revise → event_loop', next: 'Schemas first (proposal + revision that extends it). Draft LLM, tool that runs when those schemas return, revise LLM, stop after N tool rounds.' },
-  { keys: ['tool_calling', 'tool-calling', 'tool calling'], name: 'Tool-calling', flow: 'LLM ⇄ tools until a final answer', next: 'Same idea as ReAct: the model either calls a tool or finishes. Wire tool args from state or from the last model output.' },
-  { keys: ['plan', 'plan_execute', 'plan-and-execute'], name: 'Plan-and-execute', flow: 'create plan → execute step → more steps? → end', next: 'State needs a plan list and an index. Planner writes steps[]; executor runs one step and advances; conditional checks if the plan is done.' },
-  { keys: ['rag', 'retriev'], name: 'RAG', flow: 'retrieve → enough context? → generate | fallback', next: 'Retriever is a tool/function. Conditional on context quality. Generator is an LLM. Fallback if retrieval is weak.' },
-  { keys: ['supervisor', 'worker'], name: 'Supervisor + workers', flow: 'supervisor → worker A|B → supervisor → end', next: 'Supervisor is a router (who should act?). Each worker is an action. Loop back until the supervisor chooses end.' },
-  { keys: ['map', 'reduce', 'map_reduce'], name: 'Map-reduce', flow: 'split → workers → merge', next: 'Split writes chunks. Fan-out to worker actions. Merge combines partials. No loop required unless you retry a worker.' },
-  { keys: ['hitl', 'human', 'approve'], name: 'Human-in-the-loop', flow: 'draft → human approve/reject → continue or revise', next: 'The conditional is a human decision, not a model guess. Reject goes back to draft; approve goes forward.' },
-  { keys: ['guard', 'validat'], name: 'Guardrails', flow: 'validate input → agent → check output', next: 'Two checks around the agent: refuse/repair bad input, then refuse/repair bad output before end.' },
+  { keys: ['reflection'], name: 'Reflection', flow: 'generate → critique → refine loop', next: 'Two LLM nodes (draft and critique). Stop with a predicate or max iterations — no web search in this pattern.' },
+  { keys: ['reflexion'], name: 'Reflexion', flow: 'draft → execute_tools → revise → event_loop', next: 'Write the job first, then roles, then the data on each arrow. Do not load the template if you want to understand the design.' },
+  { keys: ['tool_calling', 'tool-calling', 'tool calling'], name: 'Tool-calling', flow: 'LLM ⇄ tools until a final answer', next: 'Same idea as ReAct: the model either calls a tool or finishes.' },
+  { keys: ['plan', 'plan_execute', 'plan-and-execute'], name: 'Plan-and-execute', flow: 'create plan → execute step → more steps? → end', next: 'State needs a plan list and an index.' },
+  { keys: ['rag', 'retriev'], name: 'RAG', flow: 'retrieve → enough context? → generate | fallback', next: 'Retriever is a tool. Conditional on context quality. Generator is an LLM.' },
+  { keys: ['supervisor', 'worker'], name: 'Supervisor + workers', flow: 'supervisor → worker A|B → supervisor → end', next: 'Supervisor routes; each worker is an action; loop until the supervisor chooses end.' },
+  { keys: ['map', 'reduce', 'map_reduce'], name: 'Map-reduce', flow: 'split → workers → merge', next: 'Split writes chunks; workers run; merge combines.' },
+  { keys: ['hitl', 'human', 'approve'], name: 'Human-in-the-loop', flow: 'draft → human approve/reject → continue or revise', next: 'The conditional is a human decision.' },
+  { keys: ['guard', 'validat'], name: 'Guardrails', flow: 'validate input → agent → check output', next: 'Refuse or repair bad input, then bad output, around the agent.' },
 ];
 
 function matchTemplateGuide(question) {
@@ -5826,58 +6270,14 @@ function matchTemplateGuide(question) {
 
 function localCoachReply(question) {
   const g = compactGraphForCoach();
-  const q = String(question || '').toLowerCase();
-  const gaps = coachGaps(g);
-  const lines = [];
-  const tmpl = matchTemplateGuide(question);
-  const emptyish = (g.nodes || []).filter(n => n.type !== 'start' && n.type !== 'end').length === 0;
-
-  if (tmpl) {
-    lines.push(tmpl.name + ': ' + tmpl.flow + '.');
-    lines.push(tmpl.next);
-    lines.push('Order: job → boxes and arrows → data on each edge → schemas only if an LLM must return a contract → state as memory → wire nodes → stop → OUTPUT.');
-    lines.push('Templates ▾ can drop this pattern on the canvas; you can still rebuild it by hand.');
-  } else if (/template|which pattern|what (should|do) i (use|build|start)/.test(q) || emptyish) {
-    lines.push('Pick a pattern from the job, then draw it (or load Templates ▾):');
-    lines.push('ReAct / tool-calling — model + tools until it can answer.');
-    lines.push('Reflection — self-critique, no search. Reflexion — critique + web search + revise.');
-    lines.push('RAG — retrieve then generate. Supervisor — route to specialist workers. Plan-and-execute — plan[] then run steps.');
-    lines.push('Retry, HITL, guardrails, map-reduce, or a simple branch if the job is smaller.');
-    lines.push('Next: write the job in “problem to solve”, then say which template you want and I will walk the next box.');
-  } else if (/tool|wire|tavily|search/.test(q)) {
-    lines.push('A tool node is not an LLM. It reads a state key and talks to the outside world.');
-    lines.push('Pick the catalog tool and map each arg to a state key. If an LLM returns a structured schema this tool should handle, tick “runs when LLM returns”.');
-    lines.push('If that state key is a list, generated code will batch; a scalar key will invoke once.');
-  } else if (/loop|stop|round|iterat|conditional|router/.test(q)) {
-    lines.push('Every conditional needs a real stop, not “is the answer good?”.');
-    lines.push('ReAct / tool-calling: did the model request a tool? Reflexion: N tool rounds (count tool results in messages). Retry: attempts vs max. HITL: human approve/reject.');
-    lines.push('Label both outgoing branches so continue vs end cannot be swapped.');
-  } else if (/schema|output contract|pydantic|return type/.test(q)) {
-    lines.push('Schemas are the contract of one model shot, not a copy of shared state. Not every graph needs them — only LLM nodes that must return a shape.');
-    lines.push('If two LLM shots share a shape and the second adds fields, use extends instead of duplicating.');
-    lines.push('Then bind each LLM node to the schema it must fill.');
-  } else if (/state|shared|memory|messages/.test(q)) {
-    lines.push('State is what the next node still needs to see. Do not duplicate every schema field into state.');
-    lines.push('Agent-style graphs usually keep messages. Project onto state only what a tool must read, plus any counter or plan index the conditional uses.');
-  } else if (/output|return|user see|final/.test(q)) {
-    lines.push('End does not compute. OUTPUT is what you promised the user.');
-    lines.push('If the last LLM is structured, map those fields here. Leave internal fuel (critiques, search queries, plans) off the panel unless the user should see them.');
-  } else {
-    lines.push('I am looking at your canvas as a design for whatever flow you are building — templates or custom.');
-    if (g.problem) lines.push('Job: ' + g.problem.trim().slice(0, 180));
-    lines.push('You have ' + (g.nodes || []).length + ' nodes, ' + (g.schemas || []).length + ' schemas, ' + (g.outputs || []).length + ' outputs.');
+  const q = String(question || '');
+  if (/template|which pattern|what (should|do) i (use|build|start)/i.test(q) && !looksReflexion(g)) {
+    const tmpl = matchTemplateGuide(q);
+    if (tmpl) {
+      return '**Why:** Pick the pattern from the job, then we build it one step at a time — not by dumping the template.\n\n**Do this:**\n1. ' + tmpl.name + ': ' + tmpl.flow + '.\n2. ' + tmpl.next + '\n3. Write that job in “problem to solve” if it is still empty.\n\n**Then:** When that is done, say next.';
+    }
   }
-
-  if (gaps.length) {
-    lines.push('');
-    lines.push('Still open:');
-    gaps.slice(0, 4).forEach((gap, i) => lines.push((i + 1) + '. ' + gap));
-    if (gaps.length > 4) lines.push('…and ' + (gaps.length - 4) + ' more.');
-  } else if (!tmpl && !emptyish) {
-    lines.push('');
-    lines.push('The skeleton looks complete. Next: generate code and check it against this canvas, or ask how a specific template would differ.');
-  }
-  return lines.join('\n');
+  return formatLesson(detectLesson(g, q));
 }
 
 function renderAssistant() {
@@ -5910,7 +6310,7 @@ function toggleAssistant(force) {
   if (assistantOpen && !assistantMessages.length) {
     assistantMessages.push({
       role: 'assistant',
-      text: 'Are you ready to create your best graph design?\n\nI can help — ask which template fits, or what to do next.',
+      text: openingCoachMessage(),
     });
     renderAssistant();
   }
@@ -5967,13 +6367,16 @@ async function sendAssistant(ev) {
       const gid = getGuestIdForApi();
       if (gid) headers['X-LangCanvas-Guest-Id'] = gid;
     }
+    const graph = compactGraphForCoach();
+    const lesson = detectLesson(graph, question);
     const res = await fetch(ASSISTANT_URL, {
       method: 'POST',
       headers: headers,
       body: JSON.stringify({
         question: question,
         history: history,
-        graph: compactGraphForCoach(),
+        graph: graph,
+        lesson: lesson,
       }),
     });
     if (res.ok) {
@@ -6019,6 +6422,137 @@ window.addEventListener('resize', () => {
     renderEdges();
   }, 120);
 });
+
+const SPLIT_DEFAULTS = { side: 248, assist: 300 };
+const SPLIT_MIN = { side: 188, assist: 240 };
+const SPLIT_MAX = { side: 460, assist: 560 };
+const CANVAS_MIN_SPLIT = 280;
+let splitDrag = null;
+
+function clampSplit(n, lo, hi) {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function loadSplitWidths() {
+  try {
+    const raw = localStorage.getItem('lg-split');
+    if (!raw) return { side: SPLIT_DEFAULTS.side, assist: SPLIT_DEFAULTS.assist };
+    const parsed = JSON.parse(raw);
+    return {
+      side: clampSplit(Number(parsed.side) || SPLIT_DEFAULTS.side, SPLIT_MIN.side, SPLIT_MAX.side),
+      assist: clampSplit(Number(parsed.assist) || SPLIT_DEFAULTS.assist, SPLIT_MIN.assist, SPLIT_MAX.assist),
+    };
+  } catch (_) {
+    return { side: SPLIT_DEFAULTS.side, assist: SPLIT_DEFAULTS.assist };
+  }
+}
+
+function applySplitWidths(w) {
+  document.documentElement.style.setProperty('--side-w', w.side + 'px');
+  document.documentElement.style.setProperty('--assist-w', w.assist + 'px');
+}
+
+function saveSplitWidths(w) {
+  try { localStorage.setItem('lg-split', JSON.stringify(w)); } catch (_) { /* ignore */ }
+}
+
+function afterSplitLayout() {
+  if (typeof ensureCanvasFitsContent === 'function') ensureCanvasFitsContent({ noShift: true });
+  if (typeof renderEdges === 'function') renderEdges();
+}
+
+function startSplitDrag(ev, which, handle) {
+  if (ev.button != null && ev.button !== 0) return;
+  ev.preventDefault();
+  const body = document.getElementById('lg-body');
+  if (!body) return;
+  splitDrag = {
+    which: which,
+    handle: handle,
+    rect: body.getBoundingClientRect(),
+    widths: loadSplitWidths(),
+    pointerId: ev.pointerId,
+  };
+  handle.classList.add('dragging');
+  document.body.classList.add('lg-splitting');
+  try { handle.setPointerCapture(ev.pointerId); } catch (_) { /* ignore */ }
+  window.addEventListener('pointermove', onSplitMove);
+  window.addEventListener('pointerup', endSplitDrag);
+  window.addEventListener('pointercancel', endSplitDrag);
+}
+
+function onSplitMove(ev) {
+  if (!splitDrag) return;
+  const body = document.getElementById('lg-body');
+  const rect = body ? body.getBoundingClientRect() : splitDrag.rect;
+  const w = { side: splitDrag.widths.side, assist: splitDrag.widths.assist };
+  const assistTaken = (assistantOpen ? w.assist + 10 : 0);
+  if (splitDrag.which === 'side') {
+    const max = Math.min(SPLIT_MAX.side, rect.width - assistTaken - CANVAS_MIN_SPLIT - 10);
+    w.side = clampSplit(ev.clientX - rect.left, SPLIT_MIN.side, max);
+  } else {
+    const max = Math.min(SPLIT_MAX.assist, rect.width - w.side - CANVAS_MIN_SPLIT - 20);
+    w.assist = clampSplit(rect.right - ev.clientX, SPLIT_MIN.assist, max);
+  }
+  applySplitWidths(w);
+  splitDrag.live = w;
+}
+
+function endSplitDrag() {
+  if (!splitDrag) return;
+  const handle = splitDrag.handle;
+  if (splitDrag.live) {
+    saveSplitWidths(splitDrag.live);
+  }
+  handle.classList.remove('dragging');
+  document.body.classList.remove('lg-splitting');
+  window.removeEventListener('pointermove', onSplitMove);
+  window.removeEventListener('pointerup', endSplitDrag);
+  window.removeEventListener('pointercancel', endSplitDrag);
+  splitDrag = null;
+  afterSplitLayout();
+}
+
+function resetSplitWidth(which) {
+  const w = loadSplitWidths();
+  w[which] = SPLIT_DEFAULTS[which];
+  applySplitWidths(w);
+  saveSplitWidths(w);
+  afterSplitLayout();
+}
+
+function nudgeSplit(which, delta) {
+  const w = loadSplitWidths();
+  const body = document.getElementById('lg-body');
+  const rect = body ? body.getBoundingClientRect() : { width: 1200 };
+  if (which === 'side') {
+    const max = Math.min(SPLIT_MAX.side, rect.width - (assistantOpen ? w.assist + 10 : 0) - CANVAS_MIN_SPLIT - 10);
+    w.side = clampSplit(w.side + delta, SPLIT_MIN.side, max);
+  } else {
+    const max = Math.min(SPLIT_MAX.assist, rect.width - w.side - CANVAS_MIN_SPLIT - 20);
+    w.assist = clampSplit(w.assist + delta, SPLIT_MIN.assist, max);
+  }
+  applySplitWidths(w);
+  saveSplitWidths(w);
+  afterSplitLayout();
+}
+
+function bindSplitter(id, which) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('pointerdown', (ev) => startSplitDrag(ev, which, el));
+  el.addEventListener('dblclick', () => resetSplitWidth(which));
+  el.addEventListener('keydown', (ev) => {
+    if (ev.key === 'ArrowLeft') { ev.preventDefault(); nudgeSplit(which, which === 'side' ? -16 : 16); }
+    if (ev.key === 'ArrowRight') { ev.preventDefault(); nudgeSplit(which, which === 'side' ? 16 : -16); }
+    if (ev.key === 'Home') { ev.preventDefault(); resetSplitWidth(which); }
+  });
+}
+
+applySplitWidths(loadSplitWidths());
+bindSplitter('split-side', 'side');
+bindSplitter('split-assist', 'assist');
+
 </script>
 </body>
 </html>
