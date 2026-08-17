@@ -326,10 +326,23 @@
     font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
     padding: 2px 6px; border-radius: 999px; border: 1px solid currentColor; font-style: normal;
   }
-  .lg-log { font-size: 12.5px; line-height: 1.55; max-height: 260px; overflow-y: auto; }
+  .lg-log { font-size: 12.5px; line-height: 1.55; max-height: 420px; overflow-y: auto; }
   .lg-log .entry { padding: 5px 0; border-bottom: 1px solid var(--paper-line); }
   .lg-log .entry:last-child { border-bottom: none; }
   .lg-log .step-n { color: var(--accent); font-weight: 600; }
+  .lg-trace-card {
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 8px 0;
+    background: var(--paper);
+  }
+  .lg-trace-card h4 { margin: 0 0 6px; font-size: 12.5px; }
+  .lg-trace-kind { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft); margin-left: 6px; }
+  .lg-trace-pre {
+    font-size: 11px; white-space: pre-wrap; word-break: break-word;
+    max-height: 160px; overflow: auto; margin: 4px 0 0;
+    background: #F6F4EF; padding: 6px 8px; border-radius: 6px;
+  }
+  .lg-trace-out { font-size: 12.5px; padding: 8px 10px; background: #EAF7F1; border: 1px solid #B7E0CC; border-radius: 8px; margin-top: 8px; }
+  .lg-btn:disabled { opacity: 0.55; cursor: not-allowed; }
   .lg-warn { color: #B84B3E; font-size: 12.5px; margin-top: 4px; }
   .lg-canvas-stage {
     flex: 1; min-width: 280px; min-height: 0;
@@ -859,9 +872,15 @@
       </div>
       <div class="lg-panel">
         <h3>execution</h3>
+        <p class="lg-detail-hint" style="margin:0 0 8px;">Run the dictionary on this canvas. Live uses Gemini + search (counts as 1 AI request). Dry run fills schemas with mock data, no quota.</p>
+        <textarea id="run-input" placeholder="Input for this run (e.g. a question)" style="width:100%; min-height:52px; font-family:inherit; font-size:12.5px; padding:7px 8px; border:1px solid var(--line-strong); border-radius:6px; background:var(--paper); resize:vertical; margin-bottom:8px;"></textarea>
         <div id="run-current" class="lg-run-current" style="display:none; margin-bottom:8px;"></div>
+        <div class="grp" style="margin-bottom:8px; display:flex; gap:6px;">
+          <button class="lg-btn" id="run-live-btn" style="flex:1" onclick="startCanvasRun(true)">Run</button>
+          <button class="lg-btn ghost" id="run-mock-btn" style="flex:1" onclick="startCanvasRun(false)">Dry run</button>
+        </div>
         <div class="grp" style="margin-bottom:8px;">
-          <button class="lg-btn" style="width:100%" onclick="stepRun()">step forward</button>
+          <button class="lg-btn ghost" style="width:100%" onclick="stepRun()">walk graph (no LLM)</button>
         </div>
         <button class="lg-btn" style="width:100%" onclick="resetRun()">reset execution</button>
         <div id="loop-warn" class="lg-warn" style="display:none;"></div>
@@ -1181,6 +1200,7 @@ let runCurrent = null;
 let runSteps = 0;
 let visitCounts = {};
 let runLog = [];
+let runBusy = false;
 
 const START_COLOR = '#6C5CE0';
 const END_COLOR = '#1F5C7A';
@@ -2612,8 +2632,154 @@ function resetRun() {
   runSteps = 0;
   visitCounts = {};
   runLog = [];
+  runBusy = false;
   document.getElementById('run-log').innerHTML = '';
   document.getElementById('loop-warn').style.display = 'none';
+  const cur = document.getElementById('run-current');
+  if (cur) { cur.style.display = 'none'; cur.textContent = ''; }
+  setRunButtons(false);
+  updateRunPanel();
+  renderNodes();
+}
+
+function setRunButtons(busy) {
+  runBusy = busy;
+  const live = document.getElementById('run-live-btn');
+  const mock = document.getElementById('run-mock-btn');
+  if (live) live.disabled = busy;
+  if (mock) mock.disabled = busy;
+}
+
+function prettyJson(v) {
+  try { return JSON.stringify(v, null, 2); } catch (_) { return String(v); }
+}
+
+function renderRunTrace(result) {
+  const el = document.getElementById('run-log');
+  if (!el) return;
+  const live = result && result.live;
+  const err = (result && result.error) || '';
+  const parts = [];
+  if (err) {
+    parts.push('<div class="lg-warn">' + escapeHtml(err) + '</div>');
+  }
+  (result.trace || []).forEach((step, i) => {
+    const kind = step.kind || step.type || '';
+    let body = '';
+    if (step.note) body += '<div>' + escapeHtml(step.note) + (step.branch ? ' → branch “' + escapeHtml(step.branch) + '”' : '') + '</div>';
+    if (step.llm && step.llm.args) {
+      body += '<div class="lg-detail-hint">LLM → ' + escapeHtml(step.llm.schema || 'free text') + '</div>';
+      if (step.llm.prompt) {
+        body += '<div class="lg-detail-hint">user prompt</div>';
+        body += '<pre class="lg-trace-pre">' + escapeHtml(String(step.llm.prompt).slice(0, 800)) + '</pre>';
+      }
+      body += '<pre class="lg-trace-pre">' + escapeHtml(prettyJson(step.llm.args)) + '</pre>';
+    }
+    if (step.tool) {
+      body += '<div class="lg-detail-hint">tool ' + escapeHtml(step.tool.toolId || '') + '</div>';
+      (step.tool.results || []).forEach(r => {
+        body += '<pre class="lg-trace-pre">' + escapeHtml('query: ' + (r.query || '') + '\n' + (r.snippet || '')) + '</pre>';
+      });
+    }
+    const thread = step.thread || (step.messages || []).map(m => m.role || m.kind || '?');
+    if (thread.length) {
+      body += '<div class="lg-detail-hint">' + escapeHtml(thread.join(' → ')) + '</div>';
+    }
+    if (step.wrote && Object.keys(step.wrote).length && !step.llm && !step.tool) {
+      body += '<pre class="lg-trace-pre">' + escapeHtml(prettyJson(step.wrote)) + '</pre>';
+    }
+    parts.push(
+      '<div class="lg-trace-card">' +
+        '<h4><span class="step-n">' + (i + 1) + '</span> ' + escapeHtml(step.label || '') +
+        '<span class="lg-trace-kind">' + escapeHtml(kind) + '</span></h4>' +
+        body +
+      '</div>'
+    );
+  });
+  const outs = (result.outputs || []).filter(o => o && o.key);
+  if (outs.length) {
+    parts.push('<div class="lg-trace-out"><strong>OUTPUT</strong>' +
+      outs.map(o => '<div>' + escapeHtml(o.key) + ': ' + escapeHtml(typeof o.value === 'string' ? o.value : prettyJson(o.value)) + '</div>').join('') +
+      '</div>');
+  }
+  if (!parts.length) parts.push('<div class="entry">No steps recorded.</div>');
+  el.innerHTML = '<div class="lg-detail-hint">' + (live ? 'Live run' : 'Dry run (mock)') + '</div>' + parts.join('');
+  el.scrollTop = 0;
+}
+
+async function canvasRunHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  const guest = typeof isLangCanvasGuest === 'function' && isLangCanvasGuest();
+  if (!guest && typeof getIdTokenForApi === 'function') {
+    try {
+      const idToken = await getIdTokenForApi();
+      if (idToken) headers.Authorization = 'Bearer ' + idToken;
+    } catch (_) {}
+  }
+  if (guest && typeof getGuestIdForApi === 'function') {
+    const gid = getGuestIdForApi();
+    if (gid) headers['X-LangCanvas-Guest-Id'] = gid;
+  }
+  return headers;
+}
+
+async function startCanvasRun(live) {
+  if (runBusy) return;
+  const inputEl = document.getElementById('run-input');
+  const input = ((inputEl && inputEl.value) || '').trim();
+  if (!input) {
+    const warn = document.getElementById('loop-warn');
+    warn.style.display = 'block';
+    warn.textContent = 'Write an input above (a question or task) before running.';
+    return;
+  }
+  resetRun();
+  if (inputEl) inputEl.value = input;
+  setRunButtons(true);
+  const cur = document.getElementById('run-current');
+  if (cur) {
+    cur.style.display = 'block';
+    cur.textContent = live ? 'running (live)…' : 'running (dry)…';
+  }
+  const graph = serializeGraph();
+  let result = null;
+  try {
+    if (live) {
+      const res = await fetch('/api/run', {
+        method: 'POST',
+        headers: await canvasRunHeaders(),
+        body: JSON.stringify({ input, graph }),
+      });
+      let data = null;
+      try { data = await res.json(); } catch (_) { data = null; }
+      if (!res.ok) {
+        let msg = (data && data.error) || '';
+        if (!msg && (res.status === 501 || res.status === 404)) {
+          msg = 'Live Run needs the Vercel API (POST /api/run). This page is on a static server, so Dry run works here but Run does not. Open the app with npx vercel dev, or deploy this branch.';
+        }
+        result = { live: true, trace: [], outputs: [], error: msg || ('Run failed (' + res.status + ').') };
+      } else {
+        result = data;
+        result.live = true;
+      }
+    } else {
+      if (typeof window.runCanvasGraph !== 'function') {
+        result = { live: false, trace: [], outputs: [], error: 'Dry-run engine is still loading. Try again in a second.' };
+      } else {
+        result = await window.runCanvasGraph(graph, input, window.runCanvasMockAdapters);
+        result.live = false;
+      }
+    }
+  } catch (err) {
+    result = { live: !!live, trace: [], outputs: [], error: err.message || 'Could not reach the run API.' };
+  }
+  const last = (result.trace || []).filter(s => s.type === 'action' || s.type === 'router' || s.type === 'end').pop();
+  if (last && last.label) {
+    const n = Object.values(nodes).find(x => x.label === last.label);
+    if (n) runCurrent = n.id;
+  }
+  renderRunTrace(result);
+  setRunButtons(false);
   updateRunPanel();
   renderNodes();
 }
@@ -6831,6 +6997,11 @@ applySplitWidths(loadSplitWidths());
 bindSplitter('split-side', 'side');
 bindSplitter('split-assist', 'assist');
 
+</script>
+<script type="module">
+  import { runGraph, defaultMockAdapters } from './lib/run-graph.js';
+  window.runCanvasGraph = runGraph;
+  window.runCanvasMockAdapters = defaultMockAdapters;
 </script>
 </body>
 </html>
