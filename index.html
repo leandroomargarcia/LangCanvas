@@ -453,6 +453,15 @@
   .lg-node.active-run { outline: 3px solid #E0A72E; outline-offset: 3px; }
   .lg-node.drop-target { outline: 2px dashed var(--accent); outline-offset: 4px; }
   .lg-node.problem { outline: 2.5px solid #E24B4A; outline-offset: 3px; }
+  .lg-node-x {
+    position: absolute; top: -7px; right: -7px;
+    width: 16px; height: 16px; padding: 0; border-radius: 50%;
+    border: 1px solid var(--line-strong); background: transparent;
+    color: var(--ink-soft); font-size: 11px; font-weight: 700; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; z-index: 4;
+  }
+  .lg-node-x:hover { background: transparent; border-color: #E24B4A; color: #E24B4A; }
   .lg-handle {
     position: absolute; right: -8px; top: 50%; transform: translateY(-50%);
     width: 14px; height: 14px; border-radius: 50%;
@@ -851,7 +860,6 @@
           <button type="button" class="lg-menu-item" onclick="closeMenus(); generateCode()">Generate code<span class="hint">live LangChain docs via MCP</span></button>
         </div>
       </div>
-      <button class="lg-btn" id="delete-btn" onclick="toggleMode('delete')">delete</button>
       <button class="lg-btn warn" id="reset-all-btn" onclick="resetAll()">reset</button>
       <button class="lg-btn feedback" type="button" onclick="openFeedback()" title="Send feedback">feedback</button>
       <div class="lg-user-chip" id="user-chip">
@@ -1386,6 +1394,22 @@ function renderNodes() {
       ).join('') + '</div>';
     }
     el.innerHTML = inner;
+    if (n.id !== 'start') {
+      const xbtn = document.createElement('button');
+      xbtn.type = 'button';
+      xbtn.className = 'lg-node-x';
+      xbtn.title = 'Delete';
+      xbtn.setAttribute('aria-label', 'Delete ' + (n.label || 'node'));
+      xbtn.textContent = '×';
+      xbtn.addEventListener('mousedown', (ev) => { ev.stopPropagation(); ev.preventDefault(); });
+      xbtn.addEventListener('dblclick', (ev) => { ev.stopPropagation(); ev.preventDefault(); });
+      xbtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+        deleteNodesByIds([n.id]);
+      });
+      el.appendChild(xbtn);
+    }
     if (runCurrent === n.id) el.classList.add('active-run');
     if (selected.has(n.id)) el.classList.add('selected');
     el.addEventListener('mousedown', (ev) => onNodeMouseDown(ev, n.id));
@@ -2200,7 +2224,8 @@ function onNodeDblClick(ev, id) {
 function toggleMode(m) {
   mode = mode === m ? null : m;
   edgeDraw = null;
-  document.getElementById('delete-btn').classList.toggle('active', mode === 'delete');
+  const delBtn = document.getElementById('delete-btn');
+  if (delBtn) delBtn.classList.toggle('active', mode === 'delete');
   renderNodes();
 }
 
