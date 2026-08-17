@@ -4,10 +4,10 @@
 import admin from 'firebase-admin';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { generateGeminiText } from '../lib/gemini.js';
 
 export const config = { maxDuration: 60 };
 
-const MODEL = 'gemini-2.0-flash';
 const PLAN_LIMITS = { free: 5, pro: 50 };
 const MAX_GRAPH_JSON = 12000;
 const MAX_OUTPUT_TOKENS = 3500;
@@ -411,61 +411,12 @@ function validateGeneratedCode(code, spec) {
 }
 
 async function callGeminiCodegen(userPrompt) {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!apiKey) throw new Error('Server missing GEMINI_API_KEY.');
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  const geminiRes = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-      generationConfig: {
-        temperature: 0.15,
-        maxOutputTokens: MAX_OUTPUT_TOKENS,
-      },
-    }),
+  const { text } = await generateGeminiText({
+    system: SYSTEM_PROMPT,
+    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    temperature: 0.15,
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
   });
-
-  if (!geminiRes.ok) {
-    const errText = await geminiRes.text();
-    // Fallback model if 2.0-flash unavailable
-    if (geminiRes.status === 404 || /not found|NOT_FOUND/i.test(errText)) {
-      const url2 = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(apiKey)}`;
-      const r2 = await fetch(url2, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-          generationConfig: { temperature: 0.15, maxOutputTokens: MAX_OUTPUT_TOKENS },
-        }),
-      });
-      if (!r2.ok) {
-        const err = new Error('AI provider error.');
-        err.status = 502;
-        err.detail = (await r2.text()).slice(0, 300);
-        throw err;
-      }
-      const data2 = await r2.json();
-      const parts2 = data2?.candidates?.[0]?.content?.parts || [];
-      return stripFences(parts2.map((p) => p.text || '').join(''));
-    }
-    const err = new Error('AI provider error.');
-    err.status = 502;
-    err.detail = errText.slice(0, 300);
-    throw err;
-  }
-
-  const data = await geminiRes.json();
-  const parts = data?.candidates?.[0]?.content?.parts || [];
-  const text = parts.map((p) => p.text || '').join('').trim();
-  if (!text) {
-    const err = new Error('Empty model response.');
-    err.status = 502;
-    throw err;
-  }
   return stripFences(text);
 }
 
@@ -571,7 +522,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       code,
       source: 'mcp',
-      model: MODEL,
+      model: 'gemini-flash-lite',
       pattern,
       usage: {
         plan: quota.plan,

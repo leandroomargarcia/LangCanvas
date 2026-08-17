@@ -5,8 +5,8 @@ import { createHash } from 'node:crypto';
 import admin from 'firebase-admin';
 import { Client } from 'langsmith';
 import { traceable } from 'langsmith/traceable';
+import { generateGeminiText } from '../lib/gemini.js';
 
-const MODEL = 'gemini-flash-lite-latest';
 const SYSTEM_PROMPT =
   'You are an expert in designing agents with LangGraph. Critique the graph design in English. ' +
   'Format strictly: optional one-sentence intro, then 4-8 bullets only. ' +
@@ -292,50 +292,18 @@ async function ensureUserAndReserveQuota(decoded) {
 }
 
 async function callGeminiRaw(prompt) {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!apiKey) throw new Error('Server missing GEMINI_API_KEY.');
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  const geminiRes = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: MAX_OUTPUT_TOKENS,
-      },
-    }),
+  const { text, model } = await generateGeminiText({
+    system: SYSTEM_PROMPT,
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    temperature: 0.3,
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
   });
-
-  if (!geminiRes.ok) {
-    const errText = await geminiRes.text();
-    const err = new Error('AI provider error.');
-    err.status = 502;
-    err.detail = errText.slice(0, 300);
-    throw err;
-  }
-
-  const data = await geminiRes.json();
-  const text = data.candidates
-    && data.candidates[0]
-    && data.candidates[0].content
-    && data.candidates[0].content.parts
-    && data.candidates[0].content.parts.map(p => p.text || '').join('');
-
-  if (!text) {
-    const err = new Error('AI returned an empty response.');
-    err.status = 502;
-    throw err;
-  }
-  return text;
+  return { text, model };
 }
 
 const tracedGeminiAnalyze = traceable(
   async function langcanvasGeminiAnalyze({ prompt }) {
-    const text = await callGeminiRaw(prompt);
-    return { text, model: MODEL };
+    return callGeminiRaw(prompt);
   },
   {
     name: 'langcanvas-analyze',
@@ -346,8 +314,7 @@ const tracedGeminiAnalyze = traceable(
 
 async function runAnalyze(prompt, meta) {
   if (!tracingEnabled()) {
-    const text = await callGeminiRaw(prompt);
-    return { text, model: MODEL };
+    return callGeminiRaw(prompt);
   }
 
   return tracedGeminiAnalyze(
@@ -355,7 +322,7 @@ async function runAnalyze(prompt, meta) {
     {
       metadata: {
         ...meta,
-        model: MODEL,
+        model: 'gemini-flash-lite',
       },
       tags: ['langcanvas', 'analyze'],
     },

@@ -3,10 +3,11 @@
 
 import { createHash } from 'node:crypto';
 import admin from 'firebase-admin';
+import { buildCoachPack, formatCoachUserMessage } from '../lib/coach-playbook.js';
+import { generateGeminiText } from '../lib/gemini.js';
 
 export const config = { maxDuration: 30 };
 
-const MODEL = 'gemini-flash-lite-latest';
 const PLAN_LIMITS = { free: 5, pro: 50, guest: 5 };
 const GUEST_LIMIT = PLAN_LIMITS.guest;
 const MAX_QUESTION = 800;
@@ -14,54 +15,24 @@ const MAX_GRAPH_CHARS = 8000;
 const MAX_OUTPUT_TOKENS = 1200;
 const COOLDOWN_MS = 3 * 1000;
 
-const SYSTEM_PROMPT = `You are a senior AI engineer tutoring a student who is designing a LangGraph-style system on the LangCanvas visual canvas — any flow, not only Reflexion.
+const SYSTEM_PROMPT = `You are a senior engineer tutoring on LangCanvas: a visual blackboard for LangGraph-style systems. The student must leave with flow + data dictionary so codegen can translate the canvas without inventing contracts.
 
-This is a blackboard session, not a checklist. The student must leave with a complete diagram: flow + data dictionary (what enters and leaves each box) so code can translate the canvas without inventing the contract.
+You do not invent the product. LANGCANVAS UI FOR THIS STEP, CURRENT GAP, ROSTER, and CURRENT CANVAS in the user message are the spec. Narrate them. Do not name panels or fields that are not in that spec. Do not tell them to type Python APIs (ToolNode, ToolMessage, bind_tools, tool_choice) on the canvas — those belong in Export → Generate code.
 
-Construction order (do not skip, do not dump later steps):
-1. The job (what enters, what the user should get, what must improve). Not a recipe of nodes.
-2. Roles and arrows. The algorithm in the head, then boxes. Effect = what the role does, in one sentence.
-3. Data on each arrow (the payload). If an arrow has no payload, it is extra or wrong.
-4. Freeze those payloads as schemas only if an LLM must return a contract. Nested critique objects, lists for queries, extends when a second shot is the first plus fields. Do not invent fields before the handoffs are clear.
-5. Shared state is memory for the next node, not a copy of schema fields. messages for the thread; project onto state only what a tool or a stop condition must read.
-6. Wire ONE node: kind LLM vs tool vs function, output schema, reads/writes, tool args, “runs when LLM returns”.
-7. How the loop stops — a countable budget, not “is the answer good?”.
-8. Graph OUTPUT: what you promised the user. End does not compute. Leave internal fuel (critiques, queries) off the panel.
+MODE:
+- pattern = they chose (or the canvas matches) a known template. Walk THAT roster and THAT gap. Keep PATTERN until they name a different one. “next” does not forget it.
+- custom = architecture of their own. Fill THEIR boxes (labels on CURRENT CANVAS). Do not prescribe Reflexion / ReAct / RAG unless they ask for that pattern.
 
-TEACHING RULES (non-negotiable):
-- You coach ANY flow. Never assume Reflexion. PATTERN is whichever they chose (or a custom mix from their job). If PATTERN is empty, derive roles from the job — do not invent Reflexion boxes.
-- Answer the student's QUESTION first. If they ask what to create / what to name / which actions, give the roster for THAT pattern. Do not ignore them to preach a later canvas gap (end, effects, schemas).
-- DETECTED LESSON is the next canvas step when they say next or ask nothing specific. If QUESTION conflicts with it, follow QUESTION, then one next canvas action.
-- Keep PATTERN until they name a different one. “next” does not forget ReAct, RAG, supervisor, Reflexion, etc.
-- When they ask for box names, list each role for PATTERN with a one-line why (the failure it prevents), then the wire. Rosters:
-  Simple branch: decide (conditional) + path_a + path_b + end. start → decide → path_a | path_b → end.
-  Retry/repair: try → evaluate (conditional) → try again or end. Budget: attempts.
-  ReAct: agent (LLM) → tools_condition → tools → agent; no tool call → end.
-  Reflection (no web search): generate → critique → refine → enough? → generate or end.
-  Reflexion (critique + search + revise): draft → execute_tools → revise → event_loop; no → execute_tools; yes → end.
-  Tool-calling: same idea as ReAct (LLM ⇄ tools until a final answer).
-  Plan-and-execute: planner → executor → more_steps? → executor or end.
-  RAG: retrieve → enough_context? → generate | fallback → end.
-  Supervisor + workers: supervisor → worker_a | worker_b → supervisor → end.
-  Map-reduce: split → workers → merge → end.
-  Human-in-the-loop: draft → human approve/reject → continue | revise.
-  Guardrails: validate_in → agent → check_out → end or repair.
-- Graph role names are in scope once they asked what to create. Schema field names (AnswerQuestion, Tavily, max_iterations) wait until they are stuck or ask to fill the form.
-- ONE construction step after the answer. First WHY, then canvas clicks, then wait.
-- Talk about the canvas. Do not tell them to type ToolNode, ToolMessage, bind_tools, or tool_choice as Python on the canvas.
-- Name THEIR nodes when those labels are real. Ignore placeholders like “new action”.
-- Match the student's language (Spanish or English). If they write in Spanish, the whole reply is Spanish. Kickers: **Por qué:** **Hacé esto:** **Después:**
-- If they say they do not understand (no entiendo, explain another way, hola? after a lesson), REPHRASE from scratch. Do not paste DETECTED LESSON wording. Use a shorter why and exact UI clicks (which panel, + schema, field names).
-- DETECTED LESSON is a hint of which step, not a script to copy.
-- Shape every reply as labeled sections:
-  English: **Why:** **Do this:** **Then:**
-  Spanish: **Por qué:** **Hacé esto:** **Después:**
-  A numbered list of 2–5 canvas actions. Do not copy DETECTED LESSON text.
-- No markdown fences. No catalog of templates unless they ask which pattern fits the job.
-- You design. You do not dump full programs. If they want Python: Export → Generate code, after the dictionary is complete.
+Order of construction (never dump later steps):
+job → roles/arrows + one-line effects → payloads on arrows → SCHEMAS only if an LLM must return a contract → SHARED STATE as memory for the next node (not a copy of schema fields) → wire ONE node in NODE DETAIL → countable stop on the conditional → OUTPUT (end does not compute).
 
-Patterns (only if they ask which template, and then still give ONE next construction step):
-Simple branch; Retry/repair; ReAct; Reflection (no web search); Reflexion (critique + search + revise, stop after N tool rounds); Tool-calling; Plan-and-execute; RAG; Supervisor + workers; Map-reduce; Human-in-the-loop; Guardrails.`;
+Rules:
+- Answer QUESTION first. If they ask what to create / what to name, list ROSTER (name + one-line why) and the CANONICAL WIRE, then the CURRENT GAP clicks. Do not skip names to preach schemas.
+- If they say next / nothing specific, teach CURRENT GAP only: why, then the listed clicks, then wait.
+- If they do not understand, rephrase CURRENT GAP with the UI spec (which panel, which field). Do not paste the gap as a script and do not jump ahead.
+- ONE step. 2–5 numbered canvas actions. Name THEIR real labels; ignore “new action”.
+- Match the student language. Spanish → whole reply in Spanish with **Por qué:** **Hacé esto:** **Después:** English → **Why:** **Do this:** **Then:**
+- No markdown fences. No full programs. No catalog of templates unless they ask which pattern fits the job.`;
 
 const lastOkByUid = new Map();
 
@@ -243,36 +214,13 @@ async function ensureUserAndReserveQuota(decoded) {
 }
 
 async function callGemini(contents) {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!apiKey) throw new Error('Server missing GEMINI_API_KEY.');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  const geminiRes = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents,
-      generationConfig: { temperature: 0.55, maxOutputTokens: MAX_OUTPUT_TOKENS },
-    }),
+  const { text } = await generateGeminiText({
+    system: SYSTEM_PROMPT,
+    contents,
+    temperature: 0.4,
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
   });
-  if (!geminiRes.ok) {
-    const err = new Error('AI provider error.');
-    err.status = 502;
-    err.detail = (await geminiRes.text()).slice(0, 300);
-    throw err;
-  }
-  const data = await geminiRes.json();
-  const text = data.candidates
-    && data.candidates[0]
-    && data.candidates[0].content
-    && data.candidates[0].content.parts
-    && data.candidates[0].content.parts.map(p => p.text || '').join('');
-  if (!text) {
-    const err = new Error('AI returned an empty response.');
-    err.status = 502;
-    throw err;
-  }
-  return text.trim();
+  return text;
 }
 
 export default async function handler(req, res) {
@@ -310,13 +258,14 @@ export default async function handler(req, res) {
   let question = '';
   let history = [];
   let graph = null;
-  let lesson = null;
+  let stickyPattern = '';
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
     question = body && body.question;
     if (Array.isArray(body && body.history)) history = body.history;
     if (body && body.graph && typeof body.graph === 'object') graph = body.graph;
-    if (body && body.lesson && typeof body.lesson === 'object') lesson = body.lesson;
+    if (body && typeof body.pattern === 'string') stickyPattern = body.pattern.trim();
+    else if (body && body.lesson && typeof body.lesson.pattern === 'string') stickyPattern = body.lesson.pattern.trim();
   } catch (_) {
     return res.status(400).json({ error: 'Invalid JSON body.' });
   }
@@ -339,6 +288,7 @@ export default async function handler(req, res) {
   }
 
   const graphText = JSON.stringify(graph || {}).slice(0, MAX_GRAPH_CHARS);
+  const pack = buildCoachPack(graph || {}, question, stickyPattern);
   const contents = [];
   history.slice(-8).forEach((m) => {
     if (!m || !m.text) return;
@@ -347,25 +297,9 @@ export default async function handler(req, res) {
       parts: [{ text: String(m.text).slice(0, 1500) }],
     });
   });
-  const lessonText = lesson
-    ? JSON.stringify({
-        id: lesson.id,
-        n: lesson.n,
-        title: lesson.title,
-        why: lesson.why,
-        do: lesson.do,
-        then: lesson.then,
-        stuck: lesson.stuck,
-        pattern: lesson.pattern,
-      }).slice(0, 2500)
-    : '(none — infer the single next construction step from CURRENT CANVAS, still one step only)';
   contents.push({
     role: 'user',
-    parts: [{
-      text: 'CURRENT CANVAS:\n' + graphText
-        + '\n\nSTEP HINT (which construction step — do NOT copy this wording; answer the QUESTION):\n' + lessonText
-        + '\n\nQUESTION:\n' + question,
-    }],
+    parts: [{ text: formatCoachUserMessage(pack, graphText, question) }],
   });
 
   try {

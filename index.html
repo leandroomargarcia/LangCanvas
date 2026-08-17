@@ -6632,6 +6632,7 @@ async function sendAssistant(ev) {
         question: question,
         history: history,
         graph: graph,
+        pattern: (lesson && lesson.pattern) || coachPattern || '',
         lesson: lesson,
       }),
     });
