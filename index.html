@@ -215,6 +215,29 @@
     padding: 12px;
   }
   .lg-panel h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; }
+  .lg-panel > summary,
+  .lg-subpanel > summary {
+    list-style: none; cursor: pointer; user-select: none;
+    margin: 0 0 8px; font-size: 12px; font-weight: 600;
+    color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  .lg-panel > summary::-webkit-details-marker,
+  .lg-subpanel > summary::-webkit-details-marker { display: none; }
+  .lg-panel > summary::after,
+  .lg-subpanel > summary::after {
+    content: ''; width: 6px; height: 6px; flex-shrink: 0;
+    border-right: 1.5px solid var(--ink-soft); border-bottom: 1.5px solid var(--ink-soft);
+    transform: rotate(45deg); margin-top: -3px;
+    transition: transform .15s ease;
+  }
+  .lg-panel:not([open]) > summary,
+  .lg-subpanel:not([open]) > summary { margin-bottom: 0; }
+  .lg-panel:not([open]) > summary::after,
+  .lg-subpanel:not([open]) > summary::after {
+    transform: rotate(-45deg); margin-top: 0;
+  }
+  .lg-subpanel { margin-top: 10px; }
   .lg-state-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
   .lg-state-row input, .lg-state-row select.t {
     font-family: inherit; font-size: 12.5px; padding: 5px 7px;
@@ -844,34 +867,37 @@
 
   <div class="lg-body" id="lg-body">
     <div class="lg-side" id="lg-side">
-      <div class="lg-panel">
-        <h3>problem to solve</h3>
+      <details class="lg-panel" open data-panel="problem">
+        <summary>problem to solve</summary>
         <textarea id="problem-desc" placeholder="Describe what problem this graph is meant to solve (e.g. 'an agent that answers questions about invoices, searching a database and retrying if it finds nothing')" style="width:100%; min-height:64px; font-family:inherit; font-size:12.5px; padding:7px 8px; border:1px solid var(--line-strong); border-radius:6px; background:var(--paper); resize:vertical;"></textarea>
-      </div>
-      <div class="lg-panel">
-        <h3>shared state</h3>
+      </details>
+      <details class="lg-panel" id="node-detail-panel" data-panel="node" style="display:none;">
+        <summary id="node-detail-summary">node</summary>
+        <div id="node-detail-body"></div>
+      </details>
+      <details class="lg-panel" open data-panel="state">
+        <summary>shared state</summary>
         <div id="state-list"></div>
         <button class="lg-btn" style="width:100%; margin-top:4px;" onclick="addStateRow()">+ variable</button>
-      </div>
-      <div class="lg-panel">
-        <h3>schemas</h3>
+      </details>
+      <details class="lg-panel" open data-panel="schemas">
+        <summary>schemas</summary>
         <p class="lg-detail-hint" style="margin:0 0 8px;">I/O contracts (Pydantic). What each LLM node returns.</p>
         <div id="schema-list"></div>
         <button class="lg-btn" style="width:100%; margin-top:4px;" onclick="addSchema()">+ schema</button>
-      </div>
-      <div class="lg-panel">
-        <h3>output</h3>
+      </details>
+      <details class="lg-panel" open data-panel="output">
+        <summary>output</summary>
         <p class="lg-detail-hint" style="margin:0 0 8px;">What the graph returns (fields of the last structured reply).</p>
         <div id="output-list"></div>
         <button class="lg-btn" style="width:100%; margin-top:4px;" onclick="addGraphOutput()">+ output</button>
-      </div>
-      <div class="lg-panel" id="node-detail-panel" style="display:none;"></div>
-      <div class="lg-panel" id="results-panel" style="display:none;">
-        <h3>results</h3>
+      </details>
+      <details class="lg-panel" id="results-panel" data-panel="results" style="display:none;">
+        <summary>results</summary>
         <div id="results-content" style="font-size:12.5px; line-height:1.5;"></div>
-      </div>
-      <div class="lg-panel">
-        <h3>execution</h3>
+      </details>
+      <details class="lg-panel" open data-panel="execution">
+        <summary>execution</summary>
         <textarea id="run-input" placeholder="Input for this run (e.g. a question)" style="width:100%; min-height:52px; font-family:inherit; font-size:12.5px; padding:7px 8px; border:1px solid var(--line-strong); border-radius:6px; background:var(--paper); resize:vertical; margin-bottom:8px;"></textarea>
         <div class="grp" style="margin-bottom:8px; display:flex; gap:6px;">
           <button class="lg-btn" id="run-live-btn" style="flex:1" onclick="startCanvasRun(true)">Run</button>
@@ -879,11 +905,11 @@
         </div>
         <button class="lg-btn" style="width:100%" onclick="resetRun()">reset execution</button>
         <div id="loop-warn" class="lg-warn" style="display:none;"></div>
-        <div style="margin-top:10px;">
-          <h3>history</h3>
+        <details class="lg-subpanel" open data-panel="history">
+          <summary>history</summary>
           <div class="lg-log" id="run-log"></div>
-        </div>
-      </div>
+        </details>
+      </details>
     </div>
 
     <div class="lg-split lg-split-side" id="split-side" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize. Double-click to reset." tabindex="0"></div>
@@ -2738,6 +2764,7 @@ async function startCanvasRun(live) {
     cur.textContent = live ? 'running (live)…' : 'running (dry)…';
   }
   const graph = serializeGraph();
+  document.querySelectorAll('#lg-side details[data-panel="execution"], #lg-side details[data-panel="history"]').forEach(el => { el.open = true; });
   let result = null;
   try {
     if (live) {
@@ -3116,6 +3143,8 @@ function deleteEdgeById(edgeId) {
   renderNodeDetail();
 }
 
+let lastDetailNodeId = null;
+
 function selectedDetailNode() {
   if (selected.size !== 1) return null;
   const n = nodes[[...selected][0]];
@@ -3190,18 +3219,30 @@ function renderReadChips(panel, n) {
 }
 
 function renderNodeDetail() {
-  const panel = document.getElementById('node-detail-panel');
-  if (!panel) return;
+  const wrap = document.getElementById('node-detail-panel');
+  const panel = document.getElementById('node-detail-body') || wrap;
+  if (!wrap || !panel) return;
   const n = selectedDetailNode();
   if (!n) {
-    panel.style.display = 'none';
+    lastDetailNodeId = null;
+    wrap.style.display = 'none';
     panel.innerHTML = '';
-    panel.style.borderColor = '';
+    wrap.style.borderColor = '';
     return;
   }
-  panel.style.display = 'block';
-  panel.style.borderColor = n.color || 'var(--line)';
+  const justOpened = lastDetailNodeId !== n.id;
+  lastDetailNodeId = n.id;
+  wrap.style.display = '';
+  wrap.open = true;
+  wrap.style.borderColor = n.color || 'var(--line)';
+  const sum = document.getElementById('node-detail-summary');
+  if (sum) sum.textContent = n.label || 'node';
   panel.innerHTML = '';
+  if (justOpened) {
+    requestAnimationFrame(() => {
+      wrap.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+  }
 
   const head = document.createElement('div');
   head.className = 'lg-detail-head';
@@ -3881,7 +3922,8 @@ function validateGraph() {
   highlightProblemNodes(badNodes);
   const panel = document.getElementById('results-panel');
   const content = document.getElementById('results-content');
-  panel.style.display = 'block';
+  panel.style.display = '';
+  panel.open = true;
   let html = '';
   if (errors.length === 0 && warnings.length === 0) {
     html = '<div style="color:#1D9E75; font-weight:500;">✓ the graph passes all structural validations.</div>';
@@ -5901,7 +5943,8 @@ function showPromptFallback(append) {
 }
 
 function showResults(html) {
-  document.getElementById('results-panel').style.display = 'block';
+  const panel = document.getElementById('results-panel');
+  if (panel) { panel.style.display = ''; panel.open = true; }
   document.getElementById('results-content').innerHTML = html;
 }
 
@@ -6993,9 +7036,30 @@ function bindSplitter(id, which) {
   });
 }
 
+function loadSideCollapse() {
+  try { return JSON.parse(localStorage.getItem('lg-side-collapse') || '{}') || {}; }
+  catch (_) { return {}; }
+}
+
+function bindSideCollapse() {
+  const saved = loadSideCollapse();
+  document.querySelectorAll('#lg-side details[data-panel]').forEach(el => {
+    const key = el.getAttribute('data-panel');
+    if (!key) return;
+    if (saved[key] === false) el.open = false;
+    if (saved[key] === true) el.open = true;
+    el.addEventListener('toggle', () => {
+      const map = loadSideCollapse();
+      map[key] = el.open;
+      try { localStorage.setItem('lg-side-collapse', JSON.stringify(map)); } catch (_) {}
+    });
+  });
+}
+
 applySplitWidths(loadSplitWidths());
 bindSplitter('split-side', 'side');
 bindSplitter('split-assist', 'assist');
+bindSideCollapse();
 
 </script>
 <script type="module">
