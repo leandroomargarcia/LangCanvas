@@ -2758,9 +2758,13 @@ async function startCanvasRun(live) {
           msg = 'Live Run needs the Vercel API (POST /api/run). This page is on a static server, so Dry run works here but Run does not. Open the app with npx vercel dev, or deploy this branch.';
         }
         result = { live: true, trace: [], outputs: [], error: msg || ('Run failed (' + res.status + ').') };
+      } else if (!data || typeof data !== 'object') {
+        result = { live: true, trace: [], outputs: [], error: 'Empty response from run API.' };
       } else {
         result = data;
         result.live = true;
+        if (!Array.isArray(result.trace)) result.trace = [];
+        if (!Array.isArray(result.outputs)) result.outputs = [];
       }
     } else {
       if (typeof window.runCanvasGraph !== 'function') {

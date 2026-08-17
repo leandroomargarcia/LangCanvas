@@ -3,7 +3,7 @@
 
 import { createHash } from 'node:crypto';
 import admin from 'firebase-admin';
-import { generateGeminiJson, fieldsToGeminiSchema } from '../lib/gemini.js';
+import { generateGeminiJson, fieldsToGeminiSchema, readResponseJson } from '../lib/gemini.js';
 import { runGraph } from '../lib/run-graph.js';
 
 export const config = { maxDuration: 60 };
@@ -245,39 +245,53 @@ async function liveLlm({ system, schemaName, fields, messages, input, prompt, pr
 }
 
 async function searchDuckDuckGo(query) {
-  const url = 'https://api.duckduckgo.com/?q=' + encodeURIComponent(query) + '&format=json&no_html=1&skip_disambig=1';
-  const res = await fetch(url, { headers: { 'User-Agent': 'LangCanvas/1.0' } });
-  if (!res.ok) return '';
-  const data = await res.json();
-  const bits = [];
-  if (data.AbstractText) bits.push(data.AbstractText);
-  (data.RelatedTopics || []).slice(0, 3).forEach(t => {
-    if (t && t.Text) bits.push(t.Text);
-    else if (t && t.Topics && t.Topics[0] && t.Topics[0].Text) bits.push(t.Topics[0].Text);
-  });
-  return bits.join(' ').slice(0, 800);
+  try {
+    const url = 'https://api.duckduckgo.com/?q=' + encodeURIComponent(query) + '&format=json&no_html=1&skip_disambig=1';
+    const res = await fetch(url, { headers: { 'User-Agent': 'LangCanvas/1.0' } });
+    if (!res.ok) return '';
+    const data = await readResponseJson(res);
+    if (!data) return '';
+    const bits = [];
+    if (data.AbstractText) bits.push(data.AbstractText);
+    (data.RelatedTopics || []).slice(0, 3).forEach(t => {
+      if (t && t.Text) bits.push(t.Text);
+      else if (t && t.Topics && t.Topics[0] && t.Topics[0].Text) bits.push(t.Topics[0].Text);
+    });
+    return bits.join(' ').slice(0, 800);
+  } catch (_) {
+    return '';
+  }
 }
 
 async function searchWikipedia(query) {
-  const url = 'https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(query.replace(/\s+/g, '_'));
-  const res = await fetch(url, { headers: { 'User-Agent': 'LangCanvas/1.0' } });
-  if (!res.ok) return '';
-  const data = await res.json();
-  return String(data.extract || data.description || '').slice(0, 800);
+  try {
+    const url = 'https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(query.replace(/\s+/g, '_'));
+    const res = await fetch(url, { headers: { 'User-Agent': 'LangCanvas/1.0' } });
+    if (!res.ok) return '';
+    const data = await readResponseJson(res);
+    return data ? String(data.extract || data.description || '').slice(0, 800) : '';
+  } catch (_) {
+    return '';
+  }
 }
 
 async function searchTavily(query) {
   const key = process.env.TAVILY_API_KEY;
   if (!key) return null;
-  const res = await fetch('https://api.tavily.com/search', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ api_key: key, query, max_results: 3, search_depth: 'basic' }),
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  const rows = data.results || [];
-  return rows.map(r => (r.title ? r.title + ': ' : '') + (r.content || r.snippet || '')).join('\n').slice(0, 1200);
+  try {
+    const res = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: key, query, max_results: 3, search_depth: 'basic' }),
+    });
+    if (!res.ok) return null;
+    const data = await readResponseJson(res);
+    if (!data) return null;
+    const rows = data.results || [];
+    return rows.map(r => (r.title ? r.title + ': ' : '') + (r.content || r.snippet || '')).join('\n').slice(0, 1200);
+  } catch (_) {
+    return null;
+  }
 }
 
 async function liveTool({ toolId, queries }) {
@@ -389,6 +403,7 @@ export default async function handler(req, res) {
         }));
       }
       delete copy.reads;
+      if (copy.llm && copy.llm.prompt) copy.llm.prompt = String(copy.llm.prompt).slice(0, 800);
       return copy;
     });
     return res.status(200).json({
