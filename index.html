@@ -339,7 +339,7 @@
   .lg-trace-pre {
     font-size: 11px; white-space: pre-wrap; word-break: break-word;
     max-height: 160px; overflow: auto; margin: 4px 0 0;
-    background: #F6F4EF; padding: 6px 8px; border-radius: 6px;
+    background: #fff; border: 1px solid var(--line); padding: 6px 8px; border-radius: 6px;
   }
   .lg-trace-out { font-size: 12.5px; padding: 8px 10px; background: #EAF7F1; border: 1px solid #B7E0CC; border-radius: 8px; margin-top: 8px; }
   .lg-btn:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -872,15 +872,10 @@
       </div>
       <div class="lg-panel">
         <h3>execution</h3>
-        <p class="lg-detail-hint" style="margin:0 0 8px;">Run the dictionary on this canvas. Live uses Gemini + search (counts as 1 AI request). Dry run fills schemas with mock data, no quota.</p>
         <textarea id="run-input" placeholder="Input for this run (e.g. a question)" style="width:100%; min-height:52px; font-family:inherit; font-size:12.5px; padding:7px 8px; border:1px solid var(--line-strong); border-radius:6px; background:var(--paper); resize:vertical; margin-bottom:8px;"></textarea>
-        <div id="run-current" class="lg-run-current" style="display:none; margin-bottom:8px;"></div>
         <div class="grp" style="margin-bottom:8px; display:flex; gap:6px;">
           <button class="lg-btn" id="run-live-btn" style="flex:1" onclick="startCanvasRun(true)">Run</button>
           <button class="lg-btn ghost" id="run-mock-btn" style="flex:1" onclick="startCanvasRun(false)">Dry run</button>
-        </div>
-        <div class="grp" style="margin-bottom:8px;">
-          <button class="lg-btn ghost" style="width:100%" onclick="stepRun()">walk graph (no LLM)</button>
         </div>
         <button class="lg-btn" style="width:100%" onclick="resetRun()">reset execution</button>
         <div id="loop-warn" class="lg-warn" style="display:none;"></div>
@@ -2622,6 +2617,7 @@ function advanceTo(nextId, extraNote) {
 
 function updateRunPanel() {
   const box = document.getElementById('run-current');
+  if (!box) return;
   if (!runCurrent || !nodes[runCurrent]) { box.style.display = 'none'; return; }
   box.style.display = 'block';
   box.textContent = 'current node: ' + nodes[runCurrent].label;
