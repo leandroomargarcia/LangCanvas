@@ -5781,9 +5781,21 @@ function compactGraphForCoach() {
         row.writes = (d.writes || []).map(w => w.key + ':' + w.op);
       }
       if (n.type === 'router') {
-        row.stopMode = d.stopMode || 'predicate';
-        row.stopMax = d.stopMax || '';
-        row.condition = d.condition || '';
+        const toolRounds = d.stopMode === 'tool_rounds';
+        row.kind = 'conditional';
+        row.stopWhen = toolRounds ? 'N tool rounds' : 'state predicate';
+        if (toolRounds) {
+          row.N = d.stopMaxMode === 'literal'
+            ? { source: 'literal', value: d.stopMax || '' }
+            : { source: 'state key', key: d.stopMax || '' };
+        } else {
+          row.if = {
+            left: d.predLeft || '',
+            op: d.predOp || '>=',
+            compare: d.predRightMode === 'literal' ? 'literal' : 'other key',
+            right: d.predRight || '',
+          };
+        }
       }
       return row;
     }),
@@ -6477,9 +6489,11 @@ function detectLesson(g, question) {
   const weakRouter = routers.find(n => {
     const outs = (g.edges || []).filter(e => e.from === n.label);
     if (outs.length < 2) return true;
-    if (n.stopMode === 'predicate' && !(n.condition || '').trim() && reflexion) return true;
-    if (reflexion && n.stopMode !== 'tool_rounds') return true;
-    if (n.stopMode === 'tool_rounds' && !n.stopMax) return true;
+    const when = String(n.stopWhen || '').toLowerCase();
+    const isRounds = when.indexOf('tool round') >= 0 || n.stopMode === 'tool_rounds';
+    const nKey = (n.N && (n.N.key || n.N.value)) || n.stopMax || '';
+    if (reflexion && !isRounds) return true;
+    if (isRounds && !String(nKey).trim()) return true;
     return false;
   });
   if (weakRouter) {
