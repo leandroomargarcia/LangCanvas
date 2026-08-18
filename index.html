@@ -325,13 +325,18 @@
     border-bottom: 1px solid var(--line);
   }
   .lg-schema-head input.name { flex: 1; min-width: 0; font-weight: 600; width: auto; }
-  .lg-schema-head select.ext { width: 86px; font-size: 11px; padding: 5px 4px; }
+  .lg-schema-head select.ext { width: 118px; font-size: 11px; padding: 5px 4px; }
   .lg-schema-field {
     display: flex; flex-direction: column; gap: 5px;
     margin-bottom: 6px; padding: 6px;
     border: 1px solid var(--line); border-radius: 7px;
     background: var(--card);
   }
+  .lg-schema-field.inherited {
+    background: transparent; opacity: 0.85;
+  }
+  .lg-schema-field.inherited input,
+  .lg-schema-field.inherited select { color: var(--ink-soft); }
   .lg-schema-field:last-of-type { margin-bottom: 8px; }
   .lg-schema-field input.desc { margin-top: 0; font-size: 11.5px; color: var(--ink-soft); }
   .lg-node.detail-warn:not(.selected):not(.problem) {
@@ -2411,6 +2416,70 @@ function deleteSchemaAt(i) {
   renderNodeDetail();
 }
 
+function schemaFieldRow(s, f, fi, opts) {
+  const inherited = !!(opts && opts.inherited);
+  const wrap = document.createElement('div');
+  wrap.className = 'lg-schema-field' + (inherited ? ' inherited' : '');
+  const row = document.createElement('div');
+  row.className = 'lg-write-row';
+  const key = document.createElement('input');
+  key.className = 'lg-detail-line';
+  key.style.width = '78px';
+  key.placeholder = 'field';
+  key.value = f.key || '';
+  key.readOnly = inherited;
+  if (!inherited) key.addEventListener('input', () => { f.key = key.value; });
+  const typ = document.createElement('select');
+  typ.className = 'lg-chip-add';
+  typ.style.flex = '1';
+  typ.disabled = inherited;
+  fieldTypeOptions(s.id).forEach(opt => {
+    const o = document.createElement('option');
+    o.value = opt.value;
+    o.textContent = opt.label;
+    if (f.type === opt.value) o.selected = true;
+    typ.appendChild(o);
+  });
+  if (f.type && ![...typ.options].some(o => o.value === f.type)) {
+    const dead = document.createElement('option');
+    dead.value = f.type; dead.textContent = f.type + ' (missing)'; dead.selected = true;
+    typ.appendChild(dead);
+  }
+  if (!inherited) typ.addEventListener('change', () => { f.type = typ.value; });
+  const frm = document.createElement('span');
+  frm.className = 'rm';
+  if (inherited) {
+    frm.textContent = '';
+    frm.title = 'from ' + ((opts && opts.fromName) || 'parent');
+    frm.style.minWidth = '14px';
+  } else {
+    frm.textContent = '×';
+    frm.title = 'remove field';
+    frm.style.cursor = 'pointer';
+    frm.style.color = 'var(--ink-soft)';
+    frm.addEventListener('click', () => {
+      s.fields.splice(fi, 1);
+      renderSchemas();
+    });
+  }
+  row.appendChild(key);
+  row.appendChild(typ);
+  row.appendChild(frm);
+  const desc = document.createElement('input');
+  desc.className = 'lg-detail-line desc';
+  desc.placeholder = inherited
+    ? ('inherited from ' + ((opts && opts.fromName) || 'parent'))
+    : 'description → Field(...)';
+  desc.value = inherited
+    ? ((f.desc || f.key || '') + ' · from ' + ((opts && opts.fromName) || 'parent'))
+    : (f.desc || '');
+  desc.readOnly = inherited;
+  if (!inherited) desc.addEventListener('input', () => { f.desc = desc.value; });
+  wrap.appendChild(row);
+  wrap.appendChild(desc);
+  return wrap;
+}
+
 function renderSchemas() {
   const list = document.getElementById('schema-list');
   if (!list) return;
@@ -2432,7 +2501,11 @@ function renderSchemas() {
       '<option value="' + escapeHtml(o.id) + '"' + (s.extendsId === o.id ? ' selected' : '') + '>' +
         escapeHtml(schemaClassName(o)) + '</option>'
     ).join('');
-    ext.addEventListener('change', () => { s.extendsId = ext.value; });
+    ext.addEventListener('change', () => {
+      s.extendsId = ext.value;
+      renderSchemas();
+      renderNodeDetail();
+    });
     const rm = document.createElement('span');
     rm.className = 'rm';
     rm.textContent = '×';
@@ -2445,54 +2518,19 @@ function renderSchemas() {
     head.appendChild(rm);
     box.appendChild(head);
 
+    const parent = s.extendsId ? schemaById(s.extendsId) : null;
+    const inherited = parent ? schemaFields(parent) : [];
+    const ownKeys = new Set((s.fields || []).map(f => (f.key || '').trim()).filter(Boolean));
+    inherited.forEach(f => {
+      if (!f.key || ownKeys.has(f.key)) return;
+      box.appendChild(schemaFieldRow(s, f, -1, {
+        inherited: true,
+        fromName: schemaClassName(parent),
+      }));
+    });
+
     (s.fields || []).forEach((f, fi) => {
-      const wrap = document.createElement('div');
-      wrap.className = 'lg-schema-field';
-      const row = document.createElement('div');
-      row.className = 'lg-write-row';
-      const key = document.createElement('input');
-      key.className = 'lg-detail-line';
-      key.style.width = '78px';
-      key.placeholder = 'field';
-      key.value = f.key || '';
-      key.addEventListener('input', () => { f.key = key.value; });
-      const typ = document.createElement('select');
-      typ.className = 'lg-chip-add';
-      typ.style.flex = '1';
-      fieldTypeOptions(s.id).forEach(opt => {
-        const o = document.createElement('option');
-        o.value = opt.value;
-        o.textContent = opt.label;
-        if (f.type === opt.value) o.selected = true;
-        typ.appendChild(o);
-      });
-      if (f.type && ![...typ.options].some(o => o.value === f.type)) {
-        const dead = document.createElement('option');
-        dead.value = f.type; dead.textContent = f.type + ' (missing)'; dead.selected = true;
-        typ.appendChild(dead);
-      }
-      typ.addEventListener('change', () => { f.type = typ.value; });
-      const frm = document.createElement('span');
-      frm.className = 'rm';
-      frm.textContent = '×';
-      frm.title = 'remove field';
-      frm.style.cursor = 'pointer';
-      frm.style.color = 'var(--ink-soft)';
-      frm.addEventListener('click', () => {
-        s.fields.splice(fi, 1);
-        renderSchemas();
-      });
-      row.appendChild(key);
-      row.appendChild(typ);
-      row.appendChild(frm);
-      const desc = document.createElement('input');
-      desc.className = 'lg-detail-line desc';
-      desc.placeholder = 'description → Field(...)';
-      desc.value = f.desc || '';
-      desc.addEventListener('input', () => { f.desc = desc.value; });
-      wrap.appendChild(row);
-      wrap.appendChild(desc);
-      box.appendChild(wrap);
+      box.appendChild(schemaFieldRow(s, f, fi, { inherited: false }));
     });
 
     const addF = document.createElement('button');
@@ -6438,10 +6476,6 @@ function namesLesson(guide, extra) {
 function stateKey(g, name) {
   const want = String(name || '').toLowerCase();
   return (g.state || []).find(v => (v.key || '').toLowerCase() === want) || null;
-}
-
-function schemaFields(s) {
-  return ((s && s.fields) || []).filter(f => (f.key || '').trim());
 }
 
 function actionFlow(g) {
