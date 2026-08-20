@@ -2,11 +2,9 @@
 
 ## 0. Guardar grafos (logueado)
 
-Si estás logueado con tu cuenta, tiene que poder guardar grafos en la base de datos.
+Listo: biblioteca de diseños (abrir / borrar / nuevo) + autosave de borradores en Firestore (`users/{uid}/graphs`).
 
-Incluso si estás desarrollando un grafo y lo dejás a medio hacer, tiene que quedar en **borrador** para cuando decidas volver a continuar.
-
-Esto **solo** si estás logueado con tu cuenta.
+---
 
 ## 1. Editor de propiedades al doble clic
 

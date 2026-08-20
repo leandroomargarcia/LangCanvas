@@ -13,6 +13,12 @@ service cloud.firestore {
         && request.resource.data.plan == resource.data.plan
         && request.resource.data.email == resource.data.email;
       allow delete: if false;
+
+      // Signed-in users persist their own canvas designs (drafts + named).
+      match /graphs/{graphId} {
+        allow read, create, update, delete: if request.auth != null
+          && request.auth.uid == uid;
+      }
     }
 
     // Usage counters are written only by the Admin SDK (API). Clients cannot touch them.

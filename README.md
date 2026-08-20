@@ -24,6 +24,7 @@ vercel.json
 - Step-through execution + structural validate
 - **Try for free**: 5 AI critiques per guest (browser id + IP)
 - Google sign-in for member / Pro path
+- Signed-in **design library**: drafts autosave to Firestore, reopen / delete / new
 - Generate code with live LangChain docs (MCP) + local fallback
 - Feedback form → Resend email
 
@@ -41,7 +42,7 @@ vercel.json
 2. **Authentication** → enable **Google**.
 3. Copy web config into `firebase-config.js` (from `firebase-config.example.js`).
 4. Authorized domains: `langcanvas.dev`, `*.vercel.app`, `localhost`.
-5. Firestore → paste [`firestore.rules`](firestore.rules) → Publish.
+5. Firestore → paste [`firestore.rules`](firestore.rules) → Publish (includes `users/{uid}/graphs` for saved designs).
 6. Service account → set on Vercel / `.env`:
    - `FIREBASE_PROJECT_ID`
    - `FIREBASE_CLIENT_EMAIL`
