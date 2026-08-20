@@ -1792,7 +1792,8 @@ function renderEdges(dragMode) {
       useLateral = edgeRouteCache[e.id];
     } else {
       const obstacles = Object.keys(nodes).filter(id => id !== e.from && id !== e.to).map(id => nodeRect(id));
-      useLateral = pathBlocked(straightGeo.points, obstacles) || pairIdx > 0;
+      const sideUpReturn = dy < 0 && Math.abs(dx) > 40;
+      useLateral = pathBlocked(straightGeo.points, obstacles) || pairIdx > 0 || sideUpReturn;
       edgeRouteCache[e.id] = useLateral;
     }
 
@@ -1833,10 +1834,18 @@ function renderEdges(dragMode) {
 
         const rightPts = [[exitR.x, exitR.y], [busRight, exitR.y], [busRight, entryR.y], [entryR.x, entryR.y]];
         const leftPts = [[exitL.x, exitL.y], [busLeft, exitL.y], [busLeft, entryL.y], [entryL.x, entryL.y]];
+        // Tight rail just outside the two nodes — for returns like rewrite → agent
+        // so the arrow does not fly off to graphRight + 72.
+        const hugRightX = Math.max(exitR.x, entryR.x) + 40;
+        const hugLeftX = Math.min(exitL.x, entryL.x) - 40;
+        const rightHugPts = [[exitR.x, exitR.y], [hugRightX, exitR.y], [hugRightX, entryR.y], [entryR.x, entryR.y]];
+        const leftHugPts = [[exitL.x, exitL.y], [hugLeftX, exitL.y], [hugLeftX, entryL.y], [entryL.x, entryL.y]];
 
         const rightBlocked = pathBlocked(rightPts, obstacles);
         const leftBlocked = pathBlocked(leftPts, obstacles);
         const belowBlocked = pathBlocked(belowPts, obstacles);
+        const rightHugBlocked = pathBlocked(rightHugPts, obstacles);
+        const leftHugBlocked = pathBlocked(leftHugPts, obstacles);
 
         let choice;
         // Upward return from a side worker (e.g. writer/researcher → supervisor, tools → agent).
@@ -1845,7 +1854,9 @@ function renderEdges(dragMode) {
         // Vertical spine loop (e.g. steps left? → execute step): prefer right so it stays on-canvas.
         const verticalUpLoop = dy < 0 && Math.abs(dx) < 80;
         // For return edges (pairIdx > 0) prefer the outer under-detour so we don't clip siblings.
-        if (upwardFromLeft && !leftBlocked) choice = 'left';
+        if (upwardFromLeft && !leftHugBlocked) choice = 'left-hug';
+        else if (upwardFromLeft && !leftBlocked) choice = 'left';
+        else if (upwardFromRight && !rightHugBlocked) choice = 'right-hug';
         else if (upwardFromRight && !rightBlocked) choice = 'right';
         else if (verticalUpLoop && !rightBlocked) choice = 'right';
         else if (pairIdx > 0 && !belowBlocked) choice = 'below';
@@ -1861,6 +1872,8 @@ function renderEdges(dragMode) {
         }
 
         if (choice === 'below') pts = belowPts;
+        else if (choice === 'left-hug') pts = leftHugPts;
+        else if (choice === 'right-hug') pts = rightHugPts;
         else if (choice === 'left') pts = leftPts;
         else pts = rightPts;
         edgeBusCache[e.id] = { pts: pts };
@@ -3036,6 +3049,18 @@ function formatPredicate(d) {
 function syncPredicateCondition(n) {
   if (!n || !n.detail) return;
   n.detail.condition = formatPredicate(n.detail);
+}
+
+function setRouterTruthy(id, key) {
+  const n = nodes[id];
+  if (!n || !n.detail) return;
+  n.detail.predLeft = key;
+  n.detail.predOp = 'truthy';
+  n.detail.predRightMode = 'literal';
+  n.detail.predRight = '';
+  n.detail.reads = [key];
+  n.detail.stopMode = 'predicate';
+  syncPredicateCondition(n);
 }
 
 function ensureNodeDetail(n) {
@@ -4248,6 +4273,49 @@ function applyReflectionLayout(generateId, reflectId, condId, endId) {
   stackColumn(['start', generateId, reflectId, condId, endId], 360, 36);
 }
 
+/** Canonical Guardrails: left spine left-aligned, agent column, rewrite to the right of output ok? looping back to agent. */
+function applyGuardrailsLayout(inCheckId, refuseId, agentId, outCheckId, rewriteId, endNoId, endOkId) {
+  renderNodes();
+  const LEFT = nodes.start ? nodes.start.x : 152;
+  const Y0 = nodes.start ? nodes.start.y : 56;
+  const SIDE = 240;
+  const REWRITE_GAP = 80;
+  let y = Y0;
+  ['start', inCheckId, refuseId, endNoId].forEach(id => {
+    if (id === 'start' && _addingTemplate) {
+      y = nodes.start.y + nodeBoxSize('start').h + SPINE_GAP;
+      return;
+    }
+    if (!nodes[id]) return;
+    nodes[id].x = LEFT;
+    nodes[id].y = Math.round(y);
+    y += nodeBoxSize(id).h + SPINE_GAP;
+  });
+  renderNodes();
+  const inY = nodes[inCheckId] ? nodes[inCheckId].y : Y0;
+  const refuseY = nodes[refuseId] ? nodes[refuseId].y : inY;
+  const endNoY = nodes[endNoId] ? nodes[endNoId].y : refuseY;
+  if (nodes[agentId]) {
+    nodes[agentId].x = LEFT + SIDE;
+    nodes[agentId].y = inY;
+  }
+  renderNodes();
+  const agentCx = nodes[agentId]
+    ? nodes[agentId].x + nodeBoxSize(agentId).w / 2
+    : LEFT + SIDE + 70;
+  placeCentered(outCheckId, agentCx, refuseY);
+  placeCentered(endOkId, agentCx, endNoY);
+  renderNodes();
+  const outR = nodeRect(outCheckId);
+  if (nodes[rewriteId]) {
+    nodes[rewriteId].x = Math.round(outR.x + outR.w + REWRITE_GAP);
+    nodes[rewriteId].y = refuseY;
+  }
+  renderNodes();
+  Object.keys(edgeRouteCache).forEach(k => { delete edgeRouteCache[k]; });
+  Object.keys(edgeBusCache).forEach(k => { delete edgeBusCache[k]; });
+}
+
 /** Align node left edges so their centers share the same X (after DOM measure). */
 function alignColumnCenters(ids, centerX) {
   renderNodes();
@@ -4593,14 +4661,13 @@ function loadTemplate(key) {
     placeCentered(end, CX + 520, applyY);
   } else if (key === 'guardrails') {
     setProblem('Guardrails: validate the user input, run the agent, then check the output before returning it.');
-    placeStart(CX - 280, 200);
-    const inCheck = addNode('router', CX, 200, 'input safe?');
-    const refuse = addNode('action', CX, 420, 'refuse'); nodes[refuse].effect = 'block unsafe input';
-    const agent = addNode('action', CX + 280, 60, 'agent'); nodes[agent].effect = 'generate candidate answer';
-    const outCheck = addNode('router', CX + 280, 240, 'output ok?');
-    const rewrite = addNode('action', CX + 280, 440, 'rewrite output'); nodes[rewrite].effect = 'fix policy issues';
-    const endOk = addNode('end', CX + 560, 60, 'end');
-    const endNo = addNode('end', CX + 560, 420, 'end');
+    const inCheck = addNode('router', 0, 0, 'input safe?');
+    const refuse = addNode('action', 0, 0, 'refuse'); nodes[refuse].effect = 'block unsafe input';
+    const agent = addNode('action', 0, 0, 'agent'); nodes[agent].effect = 'generate candidate answer';
+    const outCheck = addNode('router', 0, 0, 'output ok?');
+    const rewrite = addNode('action', 0, 0, 'rewrite output'); nodes[rewrite].effect = 'fix policy issues';
+    const endOk = addNode('end', 0, 0, 'end');
+    const endNo = addNode('end', 0, 0, 'end');
     link('start', inCheck);
     link(inCheck, agent, 'yes');
     link(inCheck, refuse, 'no');
@@ -4608,22 +4675,17 @@ function loadTemplate(key) {
     link(agent, outCheck);
     link(outCheck, endOk, 'yes');
     link(outCheck, rewrite, 'no');
-    link(rewrite, outCheck);
+    link(rewrite, agent);
     applyTemplateState([
-      { key: 'user_input', val: '' },
-      { key: 'candidate', val: '' },
-      { key: 'final_answer', val: '' },
+      { key: 'user_input', val: '', type: 'str' },
+      { key: 'input_safe', val: 'true', type: 'bool' },
+      { key: 'candidate', val: '', type: 'str' },
+      { key: 'output_ok', val: 'true', type: 'bool' },
+      { key: 'final_answer', val: '', type: 'str' },
     ]);
-    placeCentered('start', CX - 260, 200);
-    alignColumnCenters([inCheck, refuse], CX);
-    placeCentered(inCheck, CX, 200);
-    placeCentered(refuse, CX, 420);
-    alignColumnCenters([agent, outCheck, rewrite], CX + 280);
-    placeCentered(agent, CX + 280, 60);
-    placeCentered(outCheck, CX + 280, 240);
-    placeCentered(rewrite, CX + 280, 440);
-    placeCentered(endOk, CX + 560, 60);
-    placeCentered(endNo, CX + 560, 420);
+    setRouterTruthy(inCheck, 'input_safe');
+    setRouterTruthy(outCheck, 'output_ok');
+    applyGuardrailsLayout(inCheck, refuse, agent, outCheck, rewrite, endNo, endOk);
   } else {
     return;
   }
@@ -6376,7 +6438,7 @@ const FLOW_GUIDES = {
       { kind: 'action', name: 'check_out', why: 'refuse or repair the outgoing answer' },
       { kind: 'end', name: 'end', why: 'only after the output gate passes' },
     ],
-    wire: 'start → validate_in → agent → check_out → end (repair paths loop back as needed).',
+    wire: 'start → validate_in → agent → check_out → end (unsafe input → refuse; bad output → rewrite → agent).',
   },
   simple: {
     keys: ['simple branch', 'simple'],
