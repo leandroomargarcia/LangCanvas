@@ -52,14 +52,14 @@
   }
   .lg-toolbar::-webkit-scrollbar { display: none; }
   .lg-toolbar-cluster {
-    display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; min-width: 0;
+    display: flex; flex-wrap: nowrap; gap: 8px; align-items: center; flex-shrink: 0;
   }
-  .lg-toolbar-cluster.right { margin-left: auto; flex-shrink: 0; }
+  .lg-toolbar-cluster.right { margin-left: auto; }
   .lg-toolbar .grp { display: flex; gap: 5px; align-items: center; flex-shrink: 0; }
-  .lg-toolbar .sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; flex-shrink: 0; }
+  .lg-toolbar .sep { width: 1px; height: 22px; background: var(--line); margin: 0 6px; flex-shrink: 0; }
   .lg-toolbar .lg-btn { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
   .lg-brand {
-    display: flex; align-items: center; gap: 8px; margin-right: 4px; min-width: 0;
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0;
   }
   .lg-logo {
     width: 32px; height: 32px; flex-shrink: 0;
@@ -798,7 +798,6 @@
     .lg-graph-title { width: 148px; }
   }
   @media (max-width: 980px) {
-    .lg-toolbar .lg-save-status { display: none; }
     .lg-logo { width: 28px; height: 28px; }
   }
   .lg-menu-group {
@@ -817,9 +816,6 @@
     width: 168px; font-family: inherit; font-size: 12.5px;
     padding: 6px 10px; border-radius: 7px; border: 1px solid var(--line-strong);
     background: var(--paper); color: var(--ink);
-  }
-  .lg-save-status {
-    font-size: 11px; color: var(--ink-soft); white-space: nowrap; min-width: 4.5em;
   }
   #graph-library {
     position: relative;
@@ -967,7 +963,6 @@
       <div class="grp lg-signed-only">
         <button type="button" class="lg-btn" onclick="showGraphLibrary()">Designs</button>
         <input class="lg-graph-title" id="graph-title" type="text" maxlength="80" placeholder="Untitled draft" aria-label="Design title" />
-        <span class="lg-save-status" id="graph-save-status"></span>
       </div>
       <div class="sep"></div>
       <div class="grp">
