@@ -38,24 +38,26 @@
   }
   .lg-toolbar {
     display: flex;
-    flex-wrap: wrap;
-    gap: 10px 14px;
+    flex-wrap: nowrap;
+    gap: 8px 10px;
     align-items: center;
-    justify-content: space-between;
-    padding: 10px 12px;
+    padding: 8px 10px;
     background: var(--card);
     border: 1px solid var(--line);
     border-radius: 12px;
     width: 100%;
     flex-shrink: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
+  .lg-toolbar::-webkit-scrollbar { display: none; }
   .lg-toolbar-cluster {
-    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0;
+    display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; min-width: 0;
   }
-  .lg-toolbar-cluster.main { flex: 1 1 auto; justify-content: center; }
-  .lg-toolbar-cluster.right { margin-left: auto; }
-  .lg-toolbar .grp { display: flex; gap: 6px; align-items: center; }
-  .lg-toolbar .sep { width: 1px; height: 22px; background: var(--line); margin: 0 2px; }
+  .lg-toolbar-cluster.right { margin-left: auto; flex-shrink: 0; }
+  .lg-toolbar .grp { display: flex; gap: 5px; align-items: center; flex-shrink: 0; }
+  .lg-toolbar .sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; flex-shrink: 0; }
+  .lg-toolbar .lg-btn { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
   .lg-brand {
     display: flex; align-items: center; gap: 8px; margin-right: 4px; min-width: 0;
   }
@@ -749,11 +751,17 @@
   .lg-user-chip {
     display: flex; align-items: center; gap: 8px;
     flex-shrink: 0;
-    padding: 2px 2px 2px 8px;
+    padding: 2px 8px 2px 8px;
     border: 1px solid var(--line);
     border-radius: 999px;
     background: var(--paper);
+    font-family: inherit;
+    color: inherit;
+    cursor: pointer;
+    appearance: none;
   }
+  .lg-user-chip:hover { background: #fff; border-color: var(--line-strong); }
+  .lg-user-caret { font-size: 10px; color: var(--ink-soft); margin-left: -2px; }
   .lg-avatar {
     width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
     display: grid; place-items: center;
@@ -774,10 +782,7 @@
     font-size: 10px; color: var(--accent); font-weight: 650;
     text-transform: uppercase; letter-spacing: .04em;
   }
-  .lg-user-chip .lg-btn {
-    border-radius: 999px; padding: 5px 10px; font-size: 11.5px;
-    flex-shrink: 0; white-space: nowrap;
-  }
+  .lg-menu.open > .lg-user-chip { border-color: var(--accent); }
 
   .lg-menu { position: relative; }
   .lg-menu-panel {
@@ -788,9 +793,12 @@
   }
   .lg-menu.align-right .lg-menu-panel { left: auto; right: 0; }
   .lg-menu.open .lg-menu-panel { display: block; }
-  @media (max-width: 900px) {
-    .lg-toolbar-cluster.main { justify-content: flex-start; flex: 1 1 100%; order: 3; }
-    .lg-brand-mark { font-size: 15px; }
+  @media (max-width: 1180px) {
+    .lg-toolbar .lg-brand-mark { display: none; }
+    .lg-graph-title { width: 148px; }
+  }
+  @media (max-width: 980px) {
+    .lg-toolbar .lg-save-status { display: none; }
     .lg-logo { width: 28px; height: 28px; }
   }
   .lg-menu-group {
@@ -806,7 +814,7 @@
     display: block; font-size: 11px; color: var(--ink-soft); font-weight: 400; margin-top: 2px;
   }
   .lg-graph-title {
-    width: min(220px, 28vw); font-family: inherit; font-size: 12.5px;
+    width: 168px; font-family: inherit; font-size: 12.5px;
     padding: 6px 10px; border-radius: 7px; border: 1px solid var(--line-strong);
     background: var(--paper); color: var(--ink);
   }
@@ -927,14 +935,19 @@
     </div>
     <div class="lg-lib-actions">
       <button type="button" class="lg-btn primary" onclick="createNewDesign()">New design</button>
-      <div class="lg-user-chip" id="lib-user-chip">
-        <span class="lg-avatar" id="lib-user-avatar-fallback" aria-hidden="true">L</span>
-        <img id="lib-user-avatar" alt="" width="26" height="26" referrerpolicy="no-referrer" />
-        <div class="lg-user-meta">
-          <span class="name" id="lib-user-name">—</span>
-          <span class="plan" id="lib-user-plan">member</span>
+      <div class="lg-menu align-right" id="lib-user-menu">
+        <button type="button" class="lg-user-chip" id="lib-user-chip" onclick="toggleMenu('lib-user-menu', event)">
+          <span class="lg-avatar" id="lib-user-avatar-fallback" aria-hidden="true">L</span>
+          <img id="lib-user-avatar" alt="" width="26" height="26" referrerpolicy="no-referrer" />
+          <div class="lg-user-meta">
+            <span class="name" id="lib-user-name">—</span>
+            <span class="plan" id="lib-user-plan">member</span>
+          </div>
+          <span class="lg-user-caret" aria-hidden="true">▾</span>
+        </button>
+        <div class="lg-menu-panel" role="menu">
+          <button type="button" class="lg-menu-item" onclick="closeMenus(); signOutUser()">Sign out</button>
         </div>
-        <button type="button" class="lg-btn ghost" onclick="signOutUser()">Sign out</button>
       </div>
     </div>
   </div>
@@ -956,6 +969,7 @@
         <input class="lg-graph-title" id="graph-title" type="text" maxlength="80" placeholder="Untitled draft" aria-label="Design title" />
         <span class="lg-save-status" id="graph-save-status"></span>
       </div>
+      <div class="sep"></div>
       <div class="grp">
         <button class="lg-btn" onclick="addNode('action')">+ action</button>
         <button class="lg-btn" onclick="addNode('router')">+ conditional</button>
@@ -963,7 +977,7 @@
       </div>
     </div>
 
-    <div class="lg-toolbar-cluster main">
+    <div class="lg-toolbar-cluster right">
       <div class="lg-menu" id="templates-menu">
         <button type="button" class="lg-btn" id="templates-btn" onclick="toggleMenu('templates-menu', event)">Templates ▾</button>
         <div class="lg-menu-panel" id="templates-panel" role="menu">
@@ -987,9 +1001,7 @@
       </div>
       <button class="lg-btn" onclick="validateGraph()">validate</button>
       <button class="lg-btn primary" onclick="analyzeDesign()">analyze AI</button>
-    </div>
-
-    <div class="lg-toolbar-cluster right">
+      <div class="sep"></div>
       <div class="lg-menu align-right" id="export-menu">
         <button type="button" class="lg-btn" onclick="toggleMenu('export-menu', event)">Export ▾</button>
         <div class="lg-menu-panel" role="menu">
@@ -1002,14 +1014,19 @@
       </div>
       <button class="lg-btn warn" id="reset-all-btn" onclick="resetAll()">reset</button>
       <button class="lg-btn feedback" type="button" onclick="openFeedback()" title="Send feedback">feedback</button>
-      <div class="lg-user-chip" id="user-chip">
-        <span class="lg-avatar" id="user-avatar-fallback" aria-hidden="true">G</span>
-        <img id="user-avatar" alt="" width="26" height="26" referrerpolicy="no-referrer" />
-        <div class="lg-user-meta">
-          <span class="name" id="user-name">—</span>
-          <span class="plan" id="user-plan">free</span>
+      <div class="lg-menu align-right" id="user-menu">
+        <button type="button" class="lg-user-chip" id="user-chip" onclick="toggleMenu('user-menu', event)">
+          <span class="lg-avatar" id="user-avatar-fallback" aria-hidden="true">G</span>
+          <img id="user-avatar" alt="" width="26" height="26" referrerpolicy="no-referrer" />
+          <div class="lg-user-meta">
+            <span class="name" id="user-name">—</span>
+            <span class="plan" id="user-plan">free</span>
+          </div>
+          <span class="lg-user-caret" aria-hidden="true">▾</span>
+        </button>
+        <div class="lg-menu-panel" role="menu">
+          <button type="button" class="lg-menu-item" onclick="closeMenus(); signOutUser()">Sign out</button>
         </div>
-        <button type="button" class="lg-btn ghost" onclick="signOutUser()">Sign out</button>
       </div>
     </div>
   </div>
@@ -5310,7 +5327,6 @@ async function deleteDesign(id, ev) {
   if (ev) ev.stopPropagation();
   const api = graphsApi();
   if (!api) return;
-  if (!window.confirm('Delete this design? This cannot be undone.')) return;
   if (id === currentGraphId) {
     graphDirty = false;
     if (graphSaveTimer) { clearTimeout(graphSaveTimer); graphSaveTimer = null; }
