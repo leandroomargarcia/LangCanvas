@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>LangCanvas — LangGraph simulator</title>
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -53,10 +56,17 @@
   .lg-toolbar-cluster.right { margin-left: auto; }
   .lg-toolbar .grp { display: flex; gap: 6px; align-items: center; }
   .lg-toolbar .sep { width: 1px; height: 22px; background: var(--line); margin: 0 2px; }
+  .lg-brand {
+    display: flex; align-items: center; gap: 8px; margin-right: 4px; min-width: 0;
+  }
+  .lg-logo {
+    width: 32px; height: 32px; flex-shrink: 0;
+    display: block;
+  }
   .lg-brand-mark {
     font-family: "Fraunces", Georgia, serif;
     font-weight: 700; font-size: 17px; letter-spacing: -0.03em;
-    color: var(--ink); margin-right: 4px; white-space: nowrap;
+    color: var(--ink); margin-right: 0; white-space: nowrap;
   }
   .lg-brand-mark span { color: var(--accent); }
   button.lg-btn {
@@ -614,6 +624,11 @@
     text-align: left;
     animation: lg-rise 0.7s cubic-bezier(.2,.8,.2,1) both;
   }
+  .lg-login-logo {
+    width: 64px; height: 64px;
+    display: block; margin: 0 0 16px;
+    filter: drop-shadow(0 8px 16px rgba(108,92,224,0.28));
+  }
   .lg-login-brand {
     font-family: "Fraunces", Georgia, serif;
     font-size: clamp(40px, 7vw, 52px);
@@ -726,6 +741,7 @@
   }
   @media (max-width: 560px) {
     .lg-login-card { padding: 28px 22px 22px; text-align: center; }
+    .lg-login-logo { margin-left: auto; margin-right: auto; }
     .lg-login-sub { margin-left: auto; margin-right: auto; }
   }
   .lg-user-chip {
@@ -759,6 +775,7 @@
   @media (max-width: 900px) {
     .lg-toolbar-cluster.main { justify-content: flex-start; flex: 1 1 100%; order: 3; }
     .lg-brand-mark { font-size: 15px; }
+    .lg-logo { width: 28px; height: 28px; }
   }
   .lg-menu-group {
     padding: 8px 12px 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .05em;
@@ -796,6 +813,7 @@
     <div class="lg-login-veil"></div>
   </div>
   <div class="lg-login-card">
+    <img class="lg-login-logo" src="./logo.png" width="64" height="64" alt="LangCanvas" />
     <h1 class="lg-login-brand">Lang<span>Canvas</span></h1>
     <p class="lg-login-sub">Design and simulate LangGraph-style agents on a visual canvas — then get a sharp AI critique.</p>
     <button type="button" class="lg-try-free-btn" id="try-free-btn" onclick="enterGuestMode()">
@@ -819,7 +837,10 @@
 
   <div class="lg-toolbar">
     <div class="lg-toolbar-cluster">
-      <div class="lg-brand-mark">Lang<span>Canvas</span></div>
+      <div class="lg-brand">
+        <img class="lg-logo" src="./logo.png" width="32" height="32" alt="LangCanvas" />
+        <div class="lg-brand-mark">Lang<span>Canvas</span></div>
+      </div>
       <div class="sep"></div>
       <div class="grp">
         <button class="lg-btn" onclick="addNode('action')">+ action</button>
