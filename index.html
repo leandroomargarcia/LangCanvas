@@ -748,22 +748,36 @@
   }
   .lg-user-chip {
     display: flex; align-items: center; gap: 8px;
+    flex-shrink: 0;
     padding: 2px 2px 2px 8px;
     border: 1px solid var(--line);
     border-radius: 999px;
     background: var(--paper);
   }
-  .lg-user-chip img {
-    width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line);
-    object-fit: cover; background: #fff;
+  .lg-avatar {
+    width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+    display: grid; place-items: center;
+    background: var(--accent); color: #fff;
+    font-size: 11px; font-weight: 700; letter-spacing: .02em;
+    line-height: 1; user-select: none;
   }
-  .lg-user-meta { display: flex; flex-direction: column; line-height: 1.15; max-width: 110px; }
+  .lg-user-chip img {
+    display: none;
+    width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line);
+    object-fit: cover; background: #fff; flex-shrink: 0;
+  }
+  .lg-user-chip img.has-photo { display: block; }
+  .lg-user-chip.has-photo .lg-avatar { display: none; }
+  .lg-user-meta { display: flex; flex-direction: column; line-height: 1.15; max-width: 110px; min-width: 0; }
   .lg-user-meta .name { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lg-user-meta .plan {
     font-size: 10px; color: var(--accent); font-weight: 650;
     text-transform: uppercase; letter-spacing: .04em;
   }
-  .lg-user-chip .lg-btn { border-radius: 999px; padding: 5px 10px; font-size: 11.5px; }
+  .lg-user-chip .lg-btn {
+    border-radius: 999px; padding: 5px 10px; font-size: 11.5px;
+    flex-shrink: 0; white-space: nowrap;
+  }
 
   .lg-menu { position: relative; }
   .lg-menu-panel {
@@ -913,13 +927,14 @@
     </div>
     <div class="lg-lib-actions">
       <button type="button" class="lg-btn primary" onclick="createNewDesign()">New design</button>
-      <div class="lg-user-chip">
-        <img id="lib-user-avatar" alt="" width="26" height="26" />
+      <div class="lg-user-chip" id="lib-user-chip">
+        <span class="lg-avatar" id="lib-user-avatar-fallback" aria-hidden="true">L</span>
+        <img id="lib-user-avatar" alt="" width="26" height="26" referrerpolicy="no-referrer" />
         <div class="lg-user-meta">
           <span class="name" id="lib-user-name">—</span>
           <span class="plan" id="lib-user-plan">member</span>
         </div>
-        <button type="button" class="lg-btn ghost" onclick="signOutUser()" title="Sign out">out</button>
+        <button type="button" class="lg-btn ghost" onclick="signOutUser()">Sign out</button>
       </div>
     </div>
   </div>
@@ -988,12 +1003,13 @@
       <button class="lg-btn warn" id="reset-all-btn" onclick="resetAll()">reset</button>
       <button class="lg-btn feedback" type="button" onclick="openFeedback()" title="Send feedback">feedback</button>
       <div class="lg-user-chip" id="user-chip">
-        <img id="user-avatar" alt="" width="26" height="26" />
+        <span class="lg-avatar" id="user-avatar-fallback" aria-hidden="true">G</span>
+        <img id="user-avatar" alt="" width="26" height="26" referrerpolicy="no-referrer" />
         <div class="lg-user-meta">
           <span class="name" id="user-name">—</span>
           <span class="plan" id="user-plan">free</span>
         </div>
-        <button type="button" class="lg-btn ghost" onclick="signOutUser()" title="Sign out">out</button>
+        <button type="button" class="lg-btn ghost" onclick="signOutUser()">Sign out</button>
       </div>
     </div>
   </div>
@@ -1148,6 +1164,13 @@ function shortDisplayName(user) {
   return first.length > 14 ? first.slice(0, 13) + '…' : first;
 }
 
+function userInitials(user) {
+  const raw = String((user && (user.displayName || user.email)) || 'U').trim();
+  const parts = raw.split(/[\s@.]+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return raw.slice(0, 1).toUpperCase() || 'U';
+}
+
 function isGuestMode() {
   try { return localStorage.getItem(GUEST_KEY) === '1'; } catch (_) { return false; }
 }
@@ -1203,17 +1226,29 @@ function updateGuestPlanLabel() {
 function paintUserChip(user, prefix) {
   const nameEl = document.getElementById(prefix + 'user-name');
   const avatar = document.getElementById(prefix + 'user-avatar');
+  const fallback = document.getElementById(prefix + 'user-avatar-fallback');
+  const chip = document.getElementById(prefix === 'lib-' ? 'lib-user-chip' : 'user-chip');
   if (nameEl) {
     nameEl.textContent = shortDisplayName(user);
     nameEl.title = user.displayName || user.email || '';
   }
+  if (fallback) fallback.textContent = userInitials(user);
+  function showPhoto(on) {
+    if (avatar) avatar.classList.toggle('has-photo', on);
+    if (chip) chip.classList.toggle('has-photo', on);
+  }
   if (avatar) {
+    avatar.onload = function () { showPhoto(true); };
+    avatar.onerror = function () {
+      avatar.removeAttribute('src');
+      showPhoto(false);
+    };
     if (user.photoURL) {
+      showPhoto(false);
       avatar.src = user.photoURL;
-      avatar.style.display = '';
     } else {
       avatar.removeAttribute('src');
-      avatar.style.display = 'none';
+      showPhoto(false);
     }
   }
 }
@@ -1236,8 +1271,12 @@ function showGuestApp() {
   nameEl.textContent = 'Guest';
   nameEl.title = 'Try for free';
   const avatar = document.getElementById('user-avatar');
+  const fallback = document.getElementById('user-avatar-fallback');
+  const chip = document.getElementById('user-chip');
   avatar.removeAttribute('src');
-  avatar.style.display = 'none';
+  avatar.classList.remove('has-photo');
+  if (chip) chip.classList.remove('has-photo');
+  if (fallback) fallback.textContent = 'G';
   updateGuestPlanLabel();
   if (typeof window.onLangCanvasGuest === 'function') window.onLangCanvasGuest();
 }
