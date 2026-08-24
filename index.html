@@ -995,6 +995,7 @@
           <div class="lg-menu-group">RAG</div>
           <button type="button" class="lg-menu-item" onclick="pickTemplate('naive_rag')">Naive RAG<span class="hint">retrieve → generate</span></button>
           <button type="button" class="lg-menu-item" onclick="pickTemplate('crag')">CRAG<span class="hint">retrieve → grade → generate / web search</span></button>
+          <button type="button" class="lg-menu-item" onclick="pickTemplate('self_rag')">Self-RAG<span class="hint">retrieve → generate → grade / retry</span></button>
           <button type="button" class="lg-menu-item" onclick="pickTemplate('rag')">RAG pipeline<span class="hint">retrieve → generate / fallback</span></button>
           <div class="lg-menu-group">Systems</div>
           <button type="button" class="lg-menu-item" onclick="pickTemplate('supervisor')">Supervisor + 2 workers<span class="hint">route work to specialist agents</span></button>
@@ -5013,6 +5014,87 @@ function loadTemplate(key) {
     ]);
     stackColumn(['start', retrieve, grade, relevant, gen, end], CX, 36);
     placeCentered(web, CX + 280, nodes[relevant].y);
+  } else if (key === 'self_rag') {
+    setProblem('Self-RAG: retrieve once, then generate. A guard checks the answer (not the docs). If it is not grounded, retry generate until it passes or the attempt budget is spent.');
+    const gradeSch = upsertSchemaByName('GradeGeneration', {
+      fields: [
+        { key: 'binary_score', type: 'str', desc: "Is the generation grounded in the documents? 'yes' or 'no'" },
+      ],
+    });
+    const genSch = upsertSchemaByName('Generation', {
+      fields: [
+        { key: 'generation', type: 'str', desc: 'Answer grounded in the retrieved documents' },
+      ],
+    });
+    placeStart(CX, 30);
+    const retrieve = addNode('action', CX, 140, 'retrieve');
+    nodes[retrieve].effect = 'query vector store';
+    nodes[retrieve].detail = {
+      kind: 'function',
+      reads: ['question'],
+      writes: [{ key: 'documents', op: 'set', expr: 'retriever.invoke(question)' }],
+    };
+    const gen = addNode('action', CX, 280, 'generate');
+    nodes[gen].effect = 'answer from documents; attempts += 1';
+    nodes[gen].detail = {
+      kind: 'llm',
+      reads: ['question', 'documents', 'attempts'],
+      writes: [
+        { key: 'generation', op: 'set', expr: 'response.generation' },
+        { key: 'attempts', op: 'increment', expr: 'state["attempts"] + 1' },
+      ],
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      system: 'You are an assistant for question-answering tasks. Use only the retrieved context. If you do not know, say you do not know. Use three sentences maximum.',
+      prompt: 'Question: {question}\n\nContext: {documents}\n\nAnswer:',
+      outputSchemaId: genSch.id,
+      bindTools: true,
+    };
+    const grade = addNode('action', CX, 420, 'grade_generation');
+    nodes[grade].effect = 'set generation_ok from groundedness';
+    nodes[grade].detail = {
+      kind: 'llm',
+      reads: ['documents', 'generation'],
+      writes: [{ key: 'generation_ok', op: 'set', expr: 'response.binary_score == "yes"' }],
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      system: 'You grade whether an LLM generation is grounded in retrieved facts. Ignore irrelevant passages. Score yes if the claims appear in the facts. Score no if the generation invents entities, events, or facts that are not in the passages.',
+      prompt: 'Set of facts:\n\n{documents}\n\nLLM generation: {generation}',
+      outputSchemaId: gradeSch.id,
+      bindTools: true,
+    };
+    const grounded = addNode('router', CX, 560, 'grounded?');
+    const budget = addNode('router', CX + 280, 560, 'budget spent?');
+    const end = addNode('end', CX, 700, 'end');
+    link('start', retrieve);
+    link(retrieve, gen);
+    link(gen, grade);
+    link(grade, grounded);
+    link(grounded, end, 'yes');
+    link(grounded, budget, 'no');
+    link(budget, end, 'yes');
+    link(budget, gen, 'no');
+    setRouterTruthy(grounded, 'generation_ok');
+    nodes[budget].detail.predLeft = 'attempts';
+    nodes[budget].detail.predOp = '>=';
+    nodes[budget].detail.predRightMode = 'key';
+    nodes[budget].detail.predRight = 'max_attempts';
+    nodes[budget].detail.reads = ['attempts', 'max_attempts'];
+    nodes[budget].detail.stopMode = 'predicate';
+    syncPredicateCondition(nodes[budget]);
+    applyTemplateState([
+      { key: 'question', val: '', type: 'str' },
+      { key: 'documents', val: '[]', type: 'list' },
+      { key: 'generation', val: '', type: 'str' },
+      { key: 'generation_ok', val: 'false', type: 'bool' },
+      { key: 'attempts', val: '0', type: 'int' },
+      { key: 'max_attempts', val: '3', type: 'int' },
+    ]);
+    applyTemplateOutputs([
+      { key: 'generation', schemaId: genSch.id, field: 'generation' },
+    ]);
+    stackColumn(['start', retrieve, gen, grade, grounded, end], CX, 36);
+    placeCentered(budget, CX + 280, nodes[grounded].y);
   } else if (key === 'rag') {
     setProblem('RAG pipeline: retrieve documents for a question; if context is enough, generate an answer, otherwise fall back.');
     placeStart(CX, 30);
@@ -7137,6 +7219,25 @@ const FLOW_GUIDES = {
     ],
     wire: 'start → retrieve → grade_documents → docs relevant? Yes → generate → end. No → web_search → generate → end.',
   },
+  self_rag: {
+    keys: ['self-rag', 'self rag', 'self_rag'],
+    name: 'Self-RAG',
+    whyJob: 'The guard sits after generate. It does not re-check the retrieved docs. It checks the answer. If the output is not grounded, retry generate until it passes or the attempt budget is spent.',
+    doJob: [
+      'Write what corpus you search and what the user should get.',
+      'Cycle: retrieve once → generate → grounded? → end, or retry generate if budget remains.',
+    ],
+    whyRoles: 'grade_generation is the output guard (LLM + GradeGeneration schema). grounded? only reads generation_ok. budget spent? is attempts vs max_attempts, not another LLM.',
+    roles: [
+      { kind: 'action', name: 'retrieve', why: 'fetch passages from the corpus (once)' },
+      { kind: 'action', name: 'generate', why: 'answer from those passages; attempts += 1' },
+      { kind: 'action', name: 'grade_generation', why: 'is the answer grounded? set generation_ok' },
+      { kind: 'router', name: 'grounded', why: 'output ok? end, else check budget' },
+      { kind: 'router', name: 'budget_spent', why: 'attempts vs max: retry generate or stop' },
+      { kind: 'end', name: 'end', why: 'grounded answer, or budget spent' },
+    ],
+    wire: 'start → retrieve → generate → grade_generation → grounded? Yes → end. No → budget spent? Yes → end. No → generate.',
+  },
   rag: {
     keys: ['rag', 'retriev'],
     name: 'RAG',
@@ -7242,7 +7343,7 @@ const FLOW_GUIDES = {
   },
 };
 
-const FLOW_MATCH_ORDER = ['reflexion', 'reflection', 'plan_execute', 'tool_calling', 'map_reduce', 'supervisor', 'guardrails', 'hitl', 'retry', 'naive_rag', 'crag', 'rag', 'react', 'simple'];
+const FLOW_MATCH_ORDER = ['reflexion', 'reflection', 'plan_execute', 'tool_calling', 'map_reduce', 'supervisor', 'guardrails', 'hitl', 'retry', 'naive_rag', 'crag', 'self_rag', 'rag', 'react', 'simple'];
 
 function textHasKey(hay, key) {
   const k = String(key || '').toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '[\\s_-]+');
