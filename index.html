@@ -994,6 +994,7 @@
           <button type="button" class="lg-menu-item" onclick="pickTemplate('plan_execute')">Plan-and-execute<span class="hint">plan steps, then run them</span></button>
           <div class="lg-menu-group">RAG</div>
           <button type="button" class="lg-menu-item" onclick="pickTemplate('naive_rag')">Naive RAG<span class="hint">retrieve → generate</span></button>
+          <button type="button" class="lg-menu-item" onclick="pickTemplate('crag')">CRAG<span class="hint">retrieve → grade → generate / web search</span></button>
           <button type="button" class="lg-menu-item" onclick="pickTemplate('rag')">RAG pipeline<span class="hint">retrieve → generate / fallback</span></button>
           <div class="lg-menu-group">Systems</div>
           <button type="button" class="lg-menu-item" onclick="pickTemplate('supervisor')">Supervisor + 2 workers<span class="hint">route work to specialist agents</span></button>
@@ -4931,6 +4932,87 @@ function loadTemplate(key) {
       { key: 'generation', schemaId: genSch.id, field: 'generation' },
     ]);
     stackColumn(['start', retrieve, gen, end], CX, 36);
+  } else if (key === 'crag') {
+    setProblem('CRAG: retrieve documents, then a relevance guard. If the corpus is enough, generate; if not, fall back to web search and then generate.');
+    const gradeSch = upsertSchemaByName('GradeDocuments', {
+      fields: [
+        { key: 'binary_score', type: 'str', desc: "Are the retrieved documents relevant to the question? 'yes' or 'no'" },
+      ],
+    });
+    const genSch = upsertSchemaByName('Generation', {
+      fields: [
+        { key: 'generation', type: 'str', desc: 'Answer grounded in corpus docs and/or web results' },
+      ],
+    });
+    placeStart(CX, 30);
+    const retrieve = addNode('action', CX, 140, 'retrieve');
+    nodes[retrieve].effect = 'query vector store';
+    nodes[retrieve].detail = {
+      kind: 'function',
+      reads: ['question'],
+      writes: [{ key: 'documents', op: 'set', expr: 'retriever.invoke(question)' }],
+    };
+    const grade = addNode('action', CX, 280, 'grade_documents');
+    nodes[grade].effect = 'keep relevant docs; set docs_relevant';
+    nodes[grade].detail = {
+      kind: 'llm',
+      reads: ['question', 'documents'],
+      writes: [
+        { key: 'documents', op: 'set', expr: 'relevant_docs' },
+        { key: 'docs_relevant', op: 'set', expr: 'response.binary_score == "yes"' },
+      ],
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      system: 'You grade whether retrieved documents are relevant to the question. Return binary_score yes or no.',
+      prompt: 'Question: {question}\n\nDocuments: {documents}',
+      outputSchemaId: gradeSch.id,
+      bindTools: true,
+    };
+    const relevant = addNode('router', CX, 420, 'docs relevant?');
+    const gen = addNode('action', CX, 560, 'generate');
+    nodes[gen].effect = 'answer from documents';
+    nodes[gen].detail = {
+      kind: 'llm',
+      reads: ['question', 'documents'],
+      writes: [{ key: 'generation', op: 'set', expr: 'response.generation' }],
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      system: 'You are an assistant for question-answering tasks. Use only the retrieved context. If you do not know, say you do not know. Use three sentences maximum.',
+      prompt: 'Question: {question}\n\nContext: {documents}\n\nAnswer:',
+      outputSchemaId: genSch.id,
+      bindTools: true,
+    };
+    const web = addNode('action', CX + 280, 420, 'web_search');
+    nodes[web].effect = 'Tavily search; append to documents';
+    nodes[web].detail = {
+      kind: 'tool',
+      reads: ['question'],
+      toolId: 'tavily',
+      tool: 'TavilySearch',
+      toolDesc: 'Web search via Tavily. Returns snippets for a query.',
+      toolArgs: [{ param: 'query', fromKey: 'question' }],
+      writes: [{ key: 'documents', op: 'append', expr: '[Document(page_content=web_results)]' }],
+    };
+    const end = addNode('end', CX, 700, 'end');
+    link('start', retrieve);
+    link(retrieve, grade);
+    link(grade, relevant);
+    link(relevant, gen, 'yes');
+    link(relevant, web, 'no');
+    link(web, gen);
+    link(gen, end);
+    setRouterTruthy(relevant, 'docs_relevant');
+    applyTemplateState([
+      { key: 'question', val: '', type: 'str' },
+      { key: 'documents', val: '[]', type: 'list' },
+      { key: 'docs_relevant', val: 'false', type: 'bool' },
+      { key: 'generation', val: '', type: 'str' },
+    ]);
+    applyTemplateOutputs([
+      { key: 'generation', schemaId: genSch.id, field: 'generation' },
+    ]);
+    stackColumn(['start', retrieve, grade, relevant, gen, end], CX, 36);
+    placeCentered(web, CX + 280, nodes[relevant].y);
   } else if (key === 'rag') {
     setProblem('RAG pipeline: retrieve documents for a question; if context is enough, generate an answer, otherwise fall back.');
     placeStart(CX, 30);
@@ -7036,6 +7118,25 @@ const FLOW_GUIDES = {
     ],
     wire: 'start → retrieve → generate → end.',
   },
+  crag: {
+    keys: ['crag', 'corrective rag', 'corrective_rag'],
+    name: 'CRAG',
+    whyJob: 'A relevance guard sits between retrieve and generate. If the corpus fails the check, fall back to web search, then generate anyway.',
+    doJob: [
+      'Write what corpus you search and what the user should get.',
+      'Cycle: retrieve → grade → docs relevant? → generate, or web search then generate.',
+    ],
+    whyRoles: 'grade_documents is the guard (LLM + GradeDocuments schema). The router only reads docs_relevant. web_search is Tavily, not another LLM.',
+    roles: [
+      { kind: 'action', name: 'retrieve', why: 'fetch passages from the corpus' },
+      { kind: 'action', name: 'grade_documents', why: 'keep relevant docs; set docs_relevant' },
+      { kind: 'router', name: 'docs_relevant', why: 'guard: generate or web fallback?' },
+      { kind: 'action', name: 'web_search', why: 'Tavily if the corpus failed the guard' },
+      { kind: 'action', name: 'generate', why: 'answer from documents' },
+      { kind: 'end', name: 'end', why: 'after generate' },
+    ],
+    wire: 'start → retrieve → grade_documents → docs relevant? Yes → generate → end. No → web_search → generate → end.',
+  },
   rag: {
     keys: ['rag', 'retriev'],
     name: 'RAG',
@@ -7141,7 +7242,7 @@ const FLOW_GUIDES = {
   },
 };
 
-const FLOW_MATCH_ORDER = ['reflexion', 'reflection', 'plan_execute', 'tool_calling', 'map_reduce', 'supervisor', 'guardrails', 'hitl', 'retry', 'naive_rag', 'rag', 'react', 'simple'];
+const FLOW_MATCH_ORDER = ['reflexion', 'reflection', 'plan_execute', 'tool_calling', 'map_reduce', 'supervisor', 'guardrails', 'hitl', 'retry', 'naive_rag', 'crag', 'rag', 'react', 'simple'];
 
 function textHasKey(hay, key) {
   const k = String(key || '').toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '[\\s_-]+');
