@@ -992,8 +992,10 @@
           <button type="button" class="lg-menu-item" onclick="pickTemplate('reflexion')">Reflexion agent<span class="hint">draft → tools → revise → loop</span></button>
           <button type="button" class="lg-menu-item" onclick="pickTemplate('tool_calling')">Tool-calling agent<span class="hint">LLM chooses tools until done</span></button>
           <button type="button" class="lg-menu-item" onclick="pickTemplate('plan_execute')">Plan-and-execute<span class="hint">plan steps, then run them</span></button>
-          <div class="lg-menu-group">Systems</div>
+          <div class="lg-menu-group">RAG</div>
+          <button type="button" class="lg-menu-item" onclick="pickTemplate('naive_rag')">Naive RAG<span class="hint">retrieve → generate</span></button>
           <button type="button" class="lg-menu-item" onclick="pickTemplate('rag')">RAG pipeline<span class="hint">retrieve → generate / fallback</span></button>
+          <div class="lg-menu-group">Systems</div>
           <button type="button" class="lg-menu-item" onclick="pickTemplate('supervisor')">Supervisor + 2 workers<span class="hint">route work to specialist agents</span></button>
           <button type="button" class="lg-menu-item" onclick="pickTemplate('map_reduce')">Map-reduce<span class="hint">split → workers → merge</span></button>
           <div class="lg-menu-group">Safety</div>
@@ -4888,6 +4890,47 @@ function loadTemplate(key) {
       { key: 'step_results', val: '[]' },
     ]);
     stackColumn(['start', planner, exec, more, end], CX, 36);
+  } else if (key === 'naive_rag') {
+    setProblem('Naive RAG: retrieve documents for a question, then generate an answer from that context. No grading and no web fallback.');
+    const genSch = upsertSchemaByName('Generation', {
+      fields: [
+        { key: 'generation', type: 'str', desc: 'Answer grounded in the retrieved documents' },
+      ],
+    });
+    placeStart(CX, 30);
+    const retrieve = addNode('action', CX, 140, 'retrieve');
+    nodes[retrieve].effect = 'query vector store';
+    nodes[retrieve].detail = {
+      kind: 'function',
+      reads: ['question'],
+      writes: [{ key: 'documents', op: 'set', expr: 'retriever.invoke(question)' }],
+    };
+    const gen = addNode('action', CX, 300, 'generate');
+    nodes[gen].effect = 'answer from documents';
+    nodes[gen].detail = {
+      kind: 'llm',
+      reads: ['question', 'documents'],
+      writes: [{ key: 'generation', op: 'set', expr: 'response.generation' }],
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      system: 'You are an assistant for question-answering tasks. Use only the retrieved context. If you do not know, say you do not know. Use three sentences maximum.',
+      prompt: 'Question: {question}\n\nContext: {documents}\n\nAnswer:',
+      outputSchemaId: genSch.id,
+      bindTools: true,
+    };
+    const end = addNode('end', CX, 460, 'end');
+    link('start', retrieve);
+    link(retrieve, gen);
+    link(gen, end);
+    applyTemplateState([
+      { key: 'question', val: '', type: 'str' },
+      { key: 'documents', val: '[]', type: 'list' },
+      { key: 'generation', val: '', type: 'str' },
+    ]);
+    applyTemplateOutputs([
+      { key: 'generation', schemaId: genSch.id, field: 'generation' },
+    ]);
+    stackColumn(['start', retrieve, gen, end], CX, 36);
   } else if (key === 'rag') {
     setProblem('RAG pipeline: retrieve documents for a question; if context is enough, generate an answer, otherwise fall back.');
     placeStart(CX, 30);
@@ -6977,6 +7020,22 @@ const FLOW_GUIDES = {
     ],
     wire: 'start → planner → executor → more_steps. Yes → executor. No → end.',
   },
+  naive_rag: {
+    keys: ['naive rag', 'naive_rag', 'naive'],
+    name: 'Naive RAG',
+    whyJob: 'The model should answer from retrieved context, not from memory. Naive RAG always generates after retrieve — no quality gate and no web fallback.',
+    doJob: [
+      'Write what corpus you search and what the user should get.',
+      'Cycle: retrieve → generate.',
+    ],
+    whyRoles: 'Retrieve is a function over the vector store. Generate is an LLM bound to the Generation schema.',
+    roles: [
+      { kind: 'action', name: 'retrieve', why: 'fetch passages from the corpus' },
+      { kind: 'action', name: 'generate', why: 'answer from those passages' },
+      { kind: 'end', name: 'end', why: 'stop after generate' },
+    ],
+    wire: 'start → retrieve → generate → end.',
+  },
   rag: {
     keys: ['rag', 'retriev'],
     name: 'RAG',
@@ -7082,7 +7141,7 @@ const FLOW_GUIDES = {
   },
 };
 
-const FLOW_MATCH_ORDER = ['reflexion', 'reflection', 'plan_execute', 'tool_calling', 'map_reduce', 'supervisor', 'guardrails', 'hitl', 'retry', 'rag', 'react', 'simple'];
+const FLOW_MATCH_ORDER = ['reflexion', 'reflection', 'plan_execute', 'tool_calling', 'map_reduce', 'supervisor', 'guardrails', 'hitl', 'retry', 'naive_rag', 'rag', 'react', 'simple'];
 
 function textHasKey(hay, key) {
   const k = String(key || '').toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '[\\s_-]+');
