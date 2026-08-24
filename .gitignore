@@ -7,3 +7,4 @@ node_modules
 
 # Local Firebase web config (use firebase-config.example.js)
 firebase-config.js
+.env*

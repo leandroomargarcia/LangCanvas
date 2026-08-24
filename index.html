@@ -211,6 +211,12 @@
     cursor: pointer;
   }
   .lg-assist-chips button:hover { color: var(--accent); border-color: var(--accent); background: #fff; }
+  .lg-assist-chips button.primary {
+    background: var(--accent); color: #fff; border-color: var(--accent);
+  }
+  .lg-assist-chips button.primary:hover {
+    background: #5b4cc4; color: #fff; border-color: #5b4cc4;
+  }
   .lg-assist-compose {
     display: flex; gap: 6px; padding: 8px 12px 12px; border-top: 1px solid var(--paper-line);
     align-items: flex-end; flex-shrink: 0;
@@ -994,8 +1000,6 @@
           <button type="button" class="lg-menu-item" onclick="pickTemplate('guardrails')">Guardrails<span class="hint">check input and output</span></button>
         </div>
       </div>
-      <button class="lg-btn" onclick="validateGraph()">validate</button>
-      <button class="lg-btn primary" onclick="analyzeDesign()">analyze AI</button>
       <div class="sep"></div>
       <div class="lg-menu align-right" id="export-menu">
         <button type="button" class="lg-btn" onclick="toggleMenu('export-menu', event)">Export ▾</button>
@@ -1114,6 +1118,8 @@
         <button type="button" onclick="askAssistant('next')">Next step</button>
         <button type="button" onclick="askAssistant('I am stuck on this step. Walk me through the exact clicks and fields.')">I am stuck</button>
         <button type="button" onclick="askAssistant('Why does this step exist? Explain the engineering reason, then remind me what to do.')">Why this?</button>
+        <button type="button" onclick="validateGraph()">validate</button>
+        <button type="button" class="primary" onclick="analyzeDesign()">analyze AI</button>
       </div>
       <form class="lg-assist-compose" onsubmit="sendAssistant(event)">
         <textarea id="assist-input" placeholder="Say next when the step is done…" rows="2" onkeydown="assistKeydown(event)"></textarea>
