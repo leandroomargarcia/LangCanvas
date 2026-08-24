@@ -790,14 +790,15 @@
   }
   .lg-menu.open > .lg-user-chip { border-color: var(--accent); }
 
-  .lg-menu { position: relative; }
+  .lg-toolbar { position: relative; z-index: 90; }
+  .lg-menu { position: relative; z-index: 1; }
+  .lg-menu.open { z-index: 2; }
   .lg-menu-panel {
-    display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 50;
+    display: none; position: fixed; z-index: 200;
     min-width: 220px; max-height: min(70vh, 520px); overflow-y: auto;
     background: #fff; border: 1px solid var(--line-strong); border-radius: 10px;
     box-shadow: 0 12px 32px rgba(30,20,60,0.14); padding: 6px 0;
   }
-  .lg-menu.align-right .lg-menu-panel { left: auto; right: 0; }
   .lg-menu.open .lg-menu-panel { display: block; }
   @media (max-width: 1180px) {
     .lg-toolbar .lg-brand-mark { display: none; }
@@ -4389,7 +4390,29 @@ function graphHasContent() {
 }
 
 function closeMenus() {
-  document.querySelectorAll('.lg-menu.open').forEach(m => m.classList.remove('open'));
+  document.querySelectorAll('.lg-menu.open').forEach(m => {
+    m.classList.remove('open');
+    const panel = m.querySelector('.lg-menu-panel');
+    if (!panel) return;
+    panel.style.top = '';
+    panel.style.left = '';
+    panel.style.right = '';
+  });
+}
+
+function placeMenuPanel(menu) {
+  const panel = menu.querySelector('.lg-menu-panel');
+  const btn = menu.querySelector('.lg-btn, .lg-user-chip');
+  if (!panel || !btn) return;
+  const r = btn.getBoundingClientRect();
+  const gap = 6;
+  const margin = 8;
+  panel.style.top = (r.bottom + gap) + 'px';
+  panel.style.right = 'auto';
+  const width = panel.offsetWidth || 220;
+  let left = menu.classList.contains('align-right') ? r.right - width : r.left;
+  left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
+  panel.style.left = left + 'px';
 }
 
 function toggleMenu(id, ev) {
@@ -4398,7 +4421,10 @@ function toggleMenu(id, ev) {
   if (!menu) return;
   const wasOpen = menu.classList.contains('open');
   closeMenus();
-  if (!wasOpen) menu.classList.add('open');
+  if (!wasOpen) {
+    menu.classList.add('open');
+    placeMenuPanel(menu);
+  }
 }
 
 function pickTemplate(key) {
@@ -5040,6 +5066,9 @@ document.addEventListener('click', (ev) => {
   const open = document.querySelector('.lg-menu.open');
   if (!open) return;
   if (!open.contains(ev.target)) closeMenus();
+});
+window.addEventListener('resize', () => {
+  document.querySelectorAll('.lg-menu.open').forEach(placeMenuPanel);
 });
 
 // Back-compat alias if anything still calls loadExample
