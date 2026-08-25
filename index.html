@@ -2077,6 +2077,7 @@ function renderEdges(dragMode) {
   const pairSeen = {};
   const usedRightX = [];
   const usedLeftX = [];
+  const usedInnerX = [];
   const usedBottomY = [];
   const entrySlot = {};
 
@@ -2099,7 +2100,10 @@ function renderEdges(dragMode) {
     const b = nodeCenter(e.to);
     const dx = b.x - a.x, dy = b.y - a.y;
 
-    const straightSides = chooseSides(dx, dy);
+    const pinned = !!(e.exitSide && e.entrySide);
+    const straightSides = pinned
+      ? { exitSide: e.exitSide, entrySide: e.entrySide }
+      : chooseSides(dx, dy);
     const sp1 = anchorPoint(e.from, straightSides.exitSide, 3);
     const sp2 = anchorPoint(e.to, straightSides.entrySide, 9);
     const straightGeo = buildOrthogonalPath(sp1.x, sp1.y, sp2.x, sp2.y, 0, { px: 0, py: 0 });
@@ -2110,7 +2114,10 @@ function renderEdges(dragMode) {
     } else {
       const obstacles = Object.keys(nodes).filter(id => id !== e.from && id !== e.to).map(id => nodeRect(id));
       const sideUpReturn = dy < -48 && Math.abs(dx) > 40;
-      useLateral = pathBlocked(straightGeo.points, obstacles) || pairIdx > 0 || sideUpReturn;
+      const sameSide = pinned && e.exitSide === e.entrySide;
+      const innerLoop = pinned && e.exitSide === 'left' && e.entrySide === 'right';
+      const outerLoop = pinned && e.exitSide === 'right' && e.entrySide === 'left' && dy < -48;
+      useLateral = sameSide || innerLoop || outerLoop || pathBlocked(straightGeo.points, obstacles) || pairIdx > 0 || (!pinned && sideUpReturn);
       edgeRouteCache[e.id] = useLateral;
     }
 
@@ -2174,6 +2181,11 @@ function renderEdges(dragMode) {
         const leftHugBlocked = pathBlocked(leftHugPts, obstacles);
 
         let choice;
+        if (e.exitSide === 'right' && e.entrySide === 'right') choice = 'right';
+        else if (e.exitSide === 'left' && e.entrySide === 'left') choice = 'left';
+        else if (e.exitSide === 'left' && e.entrySide === 'right') choice = 'inner';
+        else if (e.exitSide === 'right' && e.entrySide === 'left') choice = 'right';
+        else {
         // Upward return from a side worker (e.g. writer/researcher → supervisor, tools → agent).
         const upwardFromLeft = dy < 0 && a.x < b.x - 40;
         const upwardFromRight = dy < 0 && a.x > b.x + 40;
@@ -2195,6 +2207,7 @@ function renderEdges(dragMode) {
           if (pathBlocked(preferredPts, obstacles) && !belowBlocked) choice = 'below';
         } else {
           choice = !belowBlocked ? 'below' : (preferLeft ? 'left' : 'right');
+        }
         }
 
         // Each return gets its own rail so "no" branches to the same node stay readable.
@@ -2219,6 +2232,11 @@ function renderEdges(dragMode) {
           const x = allocBusCoord(usedRightX, hugRightX, 1);
           const ey = nextEntryY(e.to, 'right', entryR.y);
           pts = [[exitR.x, exitR.y], [x, exitR.y], [x, ey], [entryR.x, ey]];
+        } else if (choice === 'inner') {
+          const preferred = Math.round((exitL.x + entryR.x) / 2);
+          const x = allocBusCoord(usedInnerX, preferred, -1);
+          const ey = nextEntryY(e.to, 'right', entryR.y);
+          pts = [[exitL.x, exitL.y], [x, exitL.y], [x, ey], [entryR.x, ey]];
         } else if (choice === 'left') {
           const x = allocBusCoord(usedLeftX, busLeft, -1);
           const ey = nextEntryY(e.to, 'left', entryL.y);
@@ -4441,8 +4459,11 @@ function resetAll() {
   markGraphDirty();
 }
 
-function link(from, to, label) {
-  edges.push({ id: uid('e'), from: from, to: to, label: label || '' });
+function link(from, to, label, route) {
+  const e = { id: uid('e'), from: from, to: to, label: label || '' };
+  if (route && route.exit) e.exitSide = route.exit;
+  if (route && route.entry) e.entrySide = route.entry;
+  edges.push(e);
   rememberRouterBranch(from, to, label || '');
   if (!_addingTemplate) markGraphDirty();
 }
@@ -5283,21 +5304,21 @@ function loadTemplate(key) {
     link('start', route);
     link(route, inCorpus);
     link(inCorpus, retrieve, 'yes');
-    link(inCorpus, web, 'no');
+    link(inCorpus, web, 'no', { exit: 'right', entry: 'left' });
     link(retrieve, gradeDocs);
     link(gradeDocs, docsOk);
     link(docsOk, gen, 'yes');
-    link(docsOk, web, 'no');
-    link(web, gen);
+    link(docsOk, web, 'no', { exit: 'right', entry: 'right' });
+    link(web, gen, '', { exit: 'bottom', entry: 'top' });
     link(gen, gradeGen);
     link(gradeGen, grounded);
     link(grounded, gradeAns, 'yes');
-    link(grounded, budget, 'no');
-    link(budget, end, 'yes');
-    link(budget, gen, 'no');
+    link(grounded, budget, 'no', { exit: 'right', entry: 'left' });
+    link(budget, end, 'yes', { exit: 'bottom', entry: 'top' });
+    link(budget, gen, 'no', { exit: 'left', entry: 'right' });
     link(gradeAns, useful);
     link(useful, end, 'yes');
-    link(useful, web, 'no');
+    link(useful, web, 'no', { exit: 'right', entry: 'right' });
     setRouterTruthy(inCorpus, 'use_vectorstore');
     setRouterTruthy(docsOk, 'docs_relevant');
     setRouterTruthy(grounded, 'grounded');
@@ -5529,7 +5550,12 @@ function serializeGraph() {
       if ((n.type === 'action' || n.type === 'router') && n.detail) row.detail = JSON.parse(JSON.stringify(n.detail));
       return row;
     }),
-    edges: edges.map(e => ({ id: e.id, from: e.from, to: e.to, label: e.label })),
+    edges: edges.map(e => {
+      const row = { id: e.id, from: e.from, to: e.to, label: e.label };
+      if (e.exitSide) row.exitSide = e.exitSide;
+      if (e.entrySide) row.entrySide = e.entrySide;
+      return row;
+    }),
   };
 }
 
@@ -5588,7 +5614,14 @@ function loadGraphData(data) {
     if (!isNaN(seqNum) && seqNum > nodeSeq) nodeSeq = seqNum;
   });
   ensureStartNode();
-  (data.edges || []).forEach(e => edges.push({ id: e.id, from: e.from, to: e.to, label: e.label || '' }));
+  (data.edges || []).forEach(e => edges.push({
+    id: e.id,
+    from: e.from,
+    to: e.to,
+    label: e.label || '',
+    exitSide: e.exitSide || '',
+    entrySide: e.entrySide || '',
+  }));
   Object.values(nodes).forEach(n => {
     if (n.type !== 'router') return;
     ensureNodeDetail(n);
