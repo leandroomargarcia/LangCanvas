@@ -1751,7 +1751,8 @@ const CANVAS_MIN_W = 720;
 const CANVAS_MIN_H = 520;
 const CANVAS_PAD = 56;
 /** Extra room so left/right lateral edge buses are never clipped at the canvas edge. */
-const EDGE_BUS = 96;
+const EDGE_BUS = 200;
+const EDGE_LANE_GAP = 52;
 
 /** Grow the drawable canvas so nodes/edges are never clipped by a fixed box. */
 function ensureCanvasFitsContent(opts) {
@@ -2028,6 +2029,10 @@ function buildOrthogonalPath(x1, y1, x2, y2, offsetMag, perp) {
     if (offsetMag) {
       const ox = x1 + perp.px * offsetMag;
       raw = [[x1, y1], [ox, y1], [ox, y2], [x2, y2]];
+    } else if (Math.abs(dy) >= 80) {
+      // Long drop/rise: stay on the source column, then cross at dest y.
+      // Avoids clipping through a vertical spine when the source sits to the side.
+      raw = [[x1, y1], [x1, y2], [x2, y2]];
     } else {
       const jog = Math.abs(dy) < 44 ? dy / 2 : (dy > 0 ? 22 : -22);
       const breakY = y1 + jog;
@@ -2059,10 +2064,31 @@ const edgeRouteCache = {};
 const edgeBusCache = {};
 let zoom = 1;
 
+function allocBusCoord(used, preferred, dir) {
+  let x = preferred;
+  while (used.some(u => Math.abs(u - x) < EDGE_LANE_GAP)) x += dir * EDGE_LANE_GAP;
+  used.push(x);
+  return x;
+}
+
 function renderEdges(dragMode) {
   const svg = document.getElementById('edge-svg');
   svg.querySelectorAll('.lg-edge-path, .lg-edge-hit, .lg-edge-label, .lg-edge-delete').forEach(el => el.remove());
   const pairSeen = {};
+  const usedRightX = [];
+  const usedLeftX = [];
+  const usedBottomY = [];
+  const entrySlot = {};
+
+  function nextEntryY(id, side, defaultY) {
+    const r = nodeRect(id);
+    const key = id + '|' + side;
+    const n = entrySlot[key] || 0;
+    entrySlot[key] = n + 1;
+    const spread = Math.min(Math.max(r.h / 2 - 10, 8), 20);
+    const offsets = [0, -spread, spread, -spread * 1.6, spread * 1.6];
+    return defaultY + (offsets[n] != null ? offsets[n] : ((n % 2 ? -1 : 1) * spread));
+  }
   edges.forEach(e => {
     if (!nodes[e.from] || !nodes[e.to]) return;
     const pairKey = [e.from, e.to].slice().sort().join('|');
@@ -2083,27 +2109,36 @@ function renderEdges(dragMode) {
       useLateral = edgeRouteCache[e.id];
     } else {
       const obstacles = Object.keys(nodes).filter(id => id !== e.from && id !== e.to).map(id => nodeRect(id));
-      const sideUpReturn = dy < 0 && Math.abs(dx) > 40;
+      const sideUpReturn = dy < -48 && Math.abs(dx) > 40;
       useLateral = pathBlocked(straightGeo.points, obstacles) || pairIdx > 0 || sideUpReturn;
       edgeRouteCache[e.id] = useLateral;
     }
 
     let geo;
     if (useLateral) {
-      const lane = pairIdx;
       let cached = (dragMode && edgeBusCache[e.id] !== undefined) ? edgeBusCache[e.id] : null;
       let pts;
       if (cached && cached.pts) {
         pts = cached.pts;
+        const xs = pts.map(p => p[0]);
+        const ys = pts.map(p => p[1]);
+        const spanX = Math.max.apply(null, xs) - Math.min.apply(null, xs);
+        const spanY = Math.max.apply(null, ys) - Math.min.apply(null, ys);
+        if (spanX >= spanY) {
+          const x = pts.reduce((best, p) => Math.abs(p[0] - a.x) > Math.abs(best - a.x) ? p[0] : best, pts[0][0]);
+          if (x >= a.x) usedRightX.push(x); else usedLeftX.push(x);
+        } else {
+          usedBottomY.push(Math.max.apply(null, ys));
+        }
       } else {
         const ids = Object.keys(nodes).filter(id => !(dragMode && id === dragging));
         const rects = ids.map(id => nodeRect(id));
         const graphRight = Math.max.apply(null, rects.map(r => r.x + r.w));
         const graphLeft = Math.min.apply(null, rects.map(r => r.x));
         const graphBottom = Math.max.apply(null, rects.map(r => r.y + r.h));
-        const busRight = graphRight + 72 + lane * 24;
-        const busLeft = graphLeft - 72 - lane * 24;
-        const busBottom = graphBottom + 48 + lane * 28;
+        const busRight = graphRight + 72;
+        const busLeft = graphLeft - 72;
+        const busBottom = graphBottom + 48;
         const obstacles = ids.filter(id => id !== e.from && id !== e.to).map(id => nodeRect(id));
 
         const exitR = anchorPoint(e.from, 'right', 3);
@@ -2162,11 +2197,37 @@ function renderEdges(dragMode) {
           choice = !belowBlocked ? 'below' : (preferLeft ? 'left' : 'right');
         }
 
-        if (choice === 'below') pts = belowPts;
-        else if (choice === 'left-hug') pts = leftHugPts;
-        else if (choice === 'right-hug') pts = rightHugPts;
-        else if (choice === 'left') pts = leftPts;
-        else pts = rightPts;
+        // Each return gets its own rail so "no" branches to the same node stay readable.
+        if (choice === 'below') {
+          const y = allocBusCoord(usedBottomY, busBottom, 1);
+          const x = preferLeft
+            ? allocBusCoord(usedLeftX, busLeft, -1)
+            : allocBusCoord(usedRightX, busRight, 1);
+          const ey = nextEntryY(e.to, preferLeft ? 'left' : 'right', belowEntry.y);
+          pts = [
+            [exitB.x, exitB.y],
+            [exitB.x, y],
+            [x, y],
+            [x, ey],
+            [belowEntry.x, ey],
+          ];
+        } else if (choice === 'left-hug') {
+          const x = allocBusCoord(usedLeftX, hugLeftX, -1);
+          const ey = nextEntryY(e.to, 'left', entryL.y);
+          pts = [[exitL.x, exitL.y], [x, exitL.y], [x, ey], [entryL.x, ey]];
+        } else if (choice === 'right-hug') {
+          const x = allocBusCoord(usedRightX, hugRightX, 1);
+          const ey = nextEntryY(e.to, 'right', entryR.y);
+          pts = [[exitR.x, exitR.y], [x, exitR.y], [x, ey], [entryR.x, ey]];
+        } else if (choice === 'left') {
+          const x = allocBusCoord(usedLeftX, busLeft, -1);
+          const ey = nextEntryY(e.to, 'left', entryL.y);
+          pts = [[exitL.x, exitL.y], [x, exitL.y], [x, ey], [entryL.x, ey]];
+        } else {
+          const x = allocBusCoord(usedRightX, busRight, 1);
+          const ey = nextEntryY(e.to, 'right', entryR.y);
+          pts = [[exitR.x, exitR.y], [x, exitR.y], [x, ey], [entryR.x, ey]];
+        }
         edgeBusCache[e.id] = { pts: pts };
       }
       const d = 'M ' + pts.map(p => p[0] + ' ' + p[1]).join(' L ');
