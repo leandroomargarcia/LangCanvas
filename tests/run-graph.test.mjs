@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { runGraph, flattenSchemaFields, interpolatePrompt, defaultMockAdapters } from '../lib/run-graph.js';
+import { runGraph, flattenSchemaFields, interpolatePrompt, defaultMockAdapters, evalWriteExpr, retrieveDemoDocs } from '../lib/run-graph.js';
 
 function reflexionGraph() {
   return {
@@ -236,5 +236,217 @@ assert.equal(prompted.error || '', '');
 assert.match(seenPrompt, /Answer LangGraph\?/);
 assert.match(seenPrompt, /user: LangGraph\?/);
 assert.match(prompted.trace.find(s => s.label === 'ask').llm.prompt, /Answer LangGraph\?/);
+
+assert.deepEqual(
+  evalWriteExpr('response.datasource == "vectorstore"', { args: { datasource: 'vectorstore' } }).value,
+  true,
+);
+assert.deepEqual(
+  evalWriteExpr('response.datasource == "vectorstore"', { args: { datasource: 'websearch' } }).value,
+  false,
+);
+assert.deepEqual(
+  evalWriteExpr('response.binary_score == "yes"', { args: { binary_score: 'yes' } }).value,
+  true,
+);
+assert.equal(
+  evalWriteExpr('response.generation', { args: { generation: 'hello' } }).value,
+  'hello',
+);
+assert.ok(retrieveDemoDocs('What is agent memory?').length > 0);
+assert.equal(retrieveDemoDocs('Who won Wimbledon 2024?').length, 0);
+
+function adaptiveRagGraph() {
+  return {
+    stateVars: [
+      { key: 'question', val: '', type: 'str' },
+      { key: 'documents', val: '[]', type: 'list' },
+      { key: 'generation', val: '', type: 'str' },
+      { key: 'use_vectorstore', val: 'true', type: 'bool' },
+      { key: 'docs_relevant', val: 'false', type: 'bool' },
+      { key: 'grounded', val: 'false', type: 'bool' },
+      { key: 'useful', val: 'false', type: 'bool' },
+      { key: 'attempts', val: '0', type: 'int' },
+      { key: 'max_attempts', val: '3', type: 'int' },
+    ],
+    schemas: [
+      { id: 'sch-route', name: 'RouteQuery', fields: [{ key: 'datasource', type: 'str' }] },
+      { id: 'sch-docs', name: 'GradeDocuments', fields: [{ key: 'binary_score', type: 'str' }] },
+      { id: 'sch-ground', name: 'GradeGeneration', fields: [{ key: 'binary_score', type: 'str' }] },
+      { id: 'sch-ans', name: 'GradeAnswer', fields: [{ key: 'binary_score', type: 'str' }] },
+      { id: 'sch-gen', name: 'Generation', fields: [{ key: 'generation', type: 'str' }] },
+    ],
+    outputs: [{ key: 'generation', schemaId: 'sch-gen', field: 'generation' }],
+    nodes: [
+      { id: 'start', type: 'start', label: 'start' },
+      {
+        id: 'route',
+        type: 'action',
+        label: 'route_question',
+        detail: {
+          kind: 'llm',
+          reads: ['question'],
+          writes: [{ key: 'use_vectorstore', op: 'set', expr: 'response.datasource == "vectorstore"' }],
+          outputSchemaId: 'sch-route',
+          prompt: '{question}',
+        },
+      },
+      {
+        id: 'in_corpus',
+        type: 'router',
+        label: 'in corpus?',
+        detail: { stopMode: 'predicate', predLeft: 'use_vectorstore', predOp: 'truthy', reads: ['use_vectorstore'] },
+      },
+      {
+        id: 'retrieve',
+        type: 'action',
+        label: 'retrieve',
+        detail: {
+          kind: 'function',
+          reads: ['question'],
+          writes: [{ key: 'documents', op: 'set', expr: 'retriever.invoke(question)' }],
+        },
+      },
+      {
+        id: 'grade_docs',
+        type: 'action',
+        label: 'grade_documents',
+        detail: {
+          kind: 'llm',
+          reads: ['question', 'documents'],
+          writes: [
+            { key: 'documents', op: 'set', expr: 'relevant_docs' },
+            { key: 'docs_relevant', op: 'set', expr: 'response.binary_score == "yes"' },
+          ],
+          outputSchemaId: 'sch-docs',
+          prompt: 'Question: {question}\n\nDocuments: {documents}',
+        },
+      },
+      {
+        id: 'docs_ok',
+        type: 'router',
+        label: 'docs relevant?',
+        detail: { stopMode: 'predicate', predLeft: 'docs_relevant', predOp: 'truthy', reads: ['docs_relevant'] },
+      },
+      {
+        id: 'web',
+        type: 'action',
+        label: 'web_search',
+        detail: {
+          kind: 'tool',
+          toolId: 'tavily',
+          toolArgs: [{ param: 'query', fromKey: 'question' }],
+          writes: [{ key: 'documents', op: 'set', expr: '[Document(page_content=web_results)]' }],
+          reads: ['question'],
+        },
+      },
+      {
+        id: 'gen',
+        type: 'action',
+        label: 'generate',
+        detail: {
+          kind: 'llm',
+          reads: ['question', 'documents'],
+          writes: [
+            { key: 'generation', op: 'set', expr: 'response.generation' },
+            { key: 'attempts', op: 'increment' },
+          ],
+          outputSchemaId: 'sch-gen',
+          prompt: 'Question: {question}\n\nContext: {documents}',
+        },
+      },
+      {
+        id: 'grade_gen',
+        type: 'action',
+        label: 'grade_generation',
+        detail: {
+          kind: 'llm',
+          reads: ['documents', 'generation'],
+          writes: [{ key: 'grounded', op: 'set', expr: 'response.binary_score == "yes"' }],
+          outputSchemaId: 'sch-ground',
+          prompt: 'Facts: {documents}\n\nLLM generation: {generation}',
+        },
+      },
+      {
+        id: 'grounded',
+        type: 'router',
+        label: 'grounded?',
+        detail: { stopMode: 'predicate', predLeft: 'grounded', predOp: 'truthy', reads: ['grounded'] },
+      },
+      {
+        id: 'budget',
+        type: 'router',
+        label: 'budget spent?',
+        detail: {
+          stopMode: 'predicate',
+          predLeft: 'attempts',
+          predOp: '>=',
+          predRightMode: 'key',
+          predRight: 'max_attempts',
+          reads: ['attempts', 'max_attempts'],
+        },
+      },
+      {
+        id: 'grade_ans',
+        type: 'action',
+        label: 'grade_answer',
+        detail: {
+          kind: 'llm',
+          reads: ['question', 'generation'],
+          writes: [{ key: 'useful', op: 'set', expr: 'response.binary_score == "yes"' }],
+          outputSchemaId: 'sch-ans',
+          prompt: 'Question: {question}\n\nLLM generation: {generation}',
+        },
+      },
+      {
+        id: 'useful',
+        type: 'router',
+        label: 'useful?',
+        detail: { stopMode: 'predicate', predLeft: 'useful', predOp: 'truthy', reads: ['useful'] },
+      },
+      { id: 'end', type: 'end', label: 'end' },
+    ],
+    edges: [
+      { from: 'start', to: 'route' },
+      { from: 'route', to: 'in_corpus' },
+      { from: 'in_corpus', to: 'retrieve', label: 'yes' },
+      { from: 'in_corpus', to: 'web', label: 'no' },
+      { from: 'retrieve', to: 'grade_docs' },
+      { from: 'grade_docs', to: 'docs_ok' },
+      { from: 'docs_ok', to: 'gen', label: 'yes' },
+      { from: 'docs_ok', to: 'web', label: 'no' },
+      { from: 'web', to: 'gen' },
+      { from: 'gen', to: 'grade_gen' },
+      { from: 'grade_gen', to: 'grounded' },
+      { from: 'grounded', to: 'grade_ans', label: 'yes' },
+      { from: 'grounded', to: 'budget', label: 'no' },
+      { from: 'budget', to: 'end', label: 'yes' },
+      { from: 'budget', to: 'gen', label: 'no' },
+      { from: 'grade_ans', to: 'useful' },
+      { from: 'useful', to: 'end', label: 'yes' },
+      { from: 'useful', to: 'web', label: 'no' },
+    ],
+  };
+}
+
+const inCorpus = await runGraph(adaptiveRagGraph(), 'What is agent memory?', defaultMockAdapters);
+assert.equal(inCorpus.error || '', '');
+const inPath = inCorpus.trace.map(s => s.label + (s.branch ? ':' + s.branch : ''));
+assert.ok(!inPath.includes('web_search'), 'in-corpus should not web-search: ' + inPath.join(' > '));
+assert.ok(inPath.includes('retrieve'), inPath.join(' > '));
+assert.ok(inPath.includes('in corpus?:yes'), inPath.join(' > '));
+assert.ok(Array.isArray(inCorpus.state.documents) && inCorpus.state.documents.length > 0);
+assert.equal(inCorpus.state.use_vectorstore, true);
+
+const offCorpus = await runGraph(adaptiveRagGraph(), 'Who won Wimbledon 2024?', defaultMockAdapters);
+assert.equal(offCorpus.error || '', '');
+const offPath = offCorpus.trace.map(s => s.label + (s.branch ? ':' + s.branch : ''));
+assert.ok(offPath.includes('in corpus?:no'), offPath.join(' > '));
+assert.ok(offPath.includes('web_search'), 'off-corpus should call Tavily: ' + offPath.join(' > '));
+assert.ok(!offPath.includes('retrieve'), offPath.join(' > '));
+const webStep = offCorpus.trace.find(s => s.label === 'web_search');
+assert.ok(webStep && webStep.tool && webStep.tool.queries.some(q => /wimbledon/i.test(q)));
+assert.ok(Array.isArray(offCorpus.state.documents) && offCorpus.state.documents.length > 0, 'Tavily should write documents');
+assert.equal(offCorpus.state.use_vectorstore, false);
 
 console.log('run-graph tests ok');
