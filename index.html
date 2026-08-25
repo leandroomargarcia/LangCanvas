@@ -996,6 +996,7 @@
           <button type="button" class="lg-menu-item" onclick="pickTemplate('naive_rag')">Naive RAG<span class="hint">retrieve → generate</span></button>
           <button type="button" class="lg-menu-item" onclick="pickTemplate('crag')">CRAG<span class="hint">retrieve → grade → generate / web search</span></button>
           <button type="button" class="lg-menu-item" onclick="pickTemplate('self_rag')">Self-RAG<span class="hint">retrieve → generate → grade / retry</span></button>
+          <button type="button" class="lg-menu-item" onclick="pickTemplate('adaptive_rag')">Adaptive RAG<span class="hint">route → retrieve / web → generate + checks</span></button>
           <button type="button" class="lg-menu-item" onclick="pickTemplate('rag')">RAG pipeline<span class="hint">retrieve → generate / fallback</span></button>
           <div class="lg-menu-group">Systems</div>
           <button type="button" class="lg-menu-item" onclick="pickTemplate('supervisor')">Supervisor + 2 workers<span class="hint">route work to specialist agents</span></button>
@@ -5095,6 +5096,175 @@ function loadTemplate(key) {
     ]);
     stackColumn(['start', retrieve, gen, grade, grounded, end], CX, 36);
     placeCentered(budget, CX + 280, nodes[grounded].y);
+  } else if (key === 'adaptive_rag') {
+    setProblem('Adaptive RAG: route the question to the corpus or the web, grade retrieved docs (CRAG), generate, then check if the answer is grounded and useful (Self-RAG). Retry generate if not grounded; web-search if not useful.');
+    const routeSch = upsertSchemaByName('RouteQuery', {
+      fields: [
+        { key: 'datasource', type: 'str', desc: "Route to 'vectorstore' or 'websearch'" },
+      ],
+    });
+    const docsSch = upsertSchemaByName('GradeDocuments', {
+      fields: [
+        { key: 'binary_score', type: 'str', desc: "Are the retrieved documents relevant to the question? 'yes' or 'no'" },
+      ],
+    });
+    const groundedSch = upsertSchemaByName('GradeGeneration', {
+      fields: [
+        { key: 'binary_score', type: 'str', desc: "Is the generation grounded in the documents? 'yes' or 'no'" },
+      ],
+    });
+    const usefulSch = upsertSchemaByName('GradeAnswer', {
+      fields: [
+        { key: 'binary_score', type: 'str', desc: "Does the generation address the question? 'yes' or 'no'" },
+      ],
+    });
+    const genSch = upsertSchemaByName('Generation', {
+      fields: [
+        { key: 'generation', type: 'str', desc: 'Answer grounded in corpus docs and/or web results' },
+      ],
+    });
+    placeStart(CX, 30);
+    const route = addNode('action', CX, 140, 'route_question');
+    nodes[route].effect = 'set use_vectorstore from datasource';
+    nodes[route].detail = {
+      kind: 'llm',
+      reads: ['question'],
+      writes: [{ key: 'use_vectorstore', op: 'set', expr: 'response.datasource == "vectorstore"' }],
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      system: 'You route a user question to a vectorstore or web search. The vectorstore has docs on LLM agents, prompt engineering, and adversarial attacks. Use vectorstore for those topics; otherwise websearch.',
+      prompt: '{question}',
+      outputSchemaId: routeSch.id,
+      bindTools: true,
+    };
+    const inCorpus = addNode('router', CX, 260, 'in corpus?');
+    const retrieve = addNode('action', CX, 380, 'retrieve');
+    nodes[retrieve].effect = 'query vector store';
+    nodes[retrieve].detail = {
+      kind: 'function',
+      reads: ['question'],
+      writes: [{ key: 'documents', op: 'set', expr: 'retriever.invoke(question)' }],
+    };
+    const gradeDocs = addNode('action', CX, 500, 'grade_documents');
+    nodes[gradeDocs].effect = 'keep relevant docs; set docs_relevant';
+    nodes[gradeDocs].detail = {
+      kind: 'llm',
+      reads: ['question', 'documents'],
+      writes: [
+        { key: 'documents', op: 'set', expr: 'relevant_docs' },
+        { key: 'docs_relevant', op: 'set', expr: 'response.binary_score == "yes"' },
+      ],
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      system: 'You grade whether retrieved documents are relevant to the question. Return binary_score yes or no.',
+      prompt: 'Question: {question}\n\nDocuments: {documents}',
+      outputSchemaId: docsSch.id,
+      bindTools: true,
+    };
+    const docsOk = addNode('router', CX, 620, 'docs relevant?');
+    const web = addNode('action', CX + 300, 260, 'web_search');
+    nodes[web].effect = 'Tavily search; replace documents';
+    nodes[web].detail = {
+      kind: 'tool',
+      reads: ['question'],
+      toolId: 'tavily',
+      tool: 'TavilySearch',
+      toolDesc: 'Web search via Tavily. Returns snippets for a query.',
+      toolArgs: [{ param: 'query', fromKey: 'question' }],
+      writes: [{ key: 'documents', op: 'set', expr: '[Document(page_content=web_results)]' }],
+    };
+    const gen = addNode('action', CX, 740, 'generate');
+    nodes[gen].effect = 'answer from documents; attempts += 1';
+    nodes[gen].detail = {
+      kind: 'llm',
+      reads: ['question', 'documents', 'attempts'],
+      writes: [
+        { key: 'generation', op: 'set', expr: 'response.generation' },
+        { key: 'attempts', op: 'increment', expr: 'state["attempts"] + 1' },
+      ],
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      system: 'You are an assistant for question-answering tasks. Use only the retrieved context. If you do not know, say you do not know. Use three sentences maximum.',
+      prompt: 'Question: {question}\n\nContext: {documents}\n\nAnswer:',
+      outputSchemaId: genSch.id,
+      bindTools: true,
+    };
+    const gradeGen = addNode('action', CX, 860, 'grade_generation');
+    nodes[gradeGen].effect = 'set grounded from binary_score';
+    nodes[gradeGen].detail = {
+      kind: 'llm',
+      reads: ['documents', 'generation'],
+      writes: [{ key: 'grounded', op: 'set', expr: 'response.binary_score == "yes"' }],
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      system: 'You grade whether an LLM generation is grounded in retrieved facts. Ignore irrelevant passages. Score yes if the claims appear in the facts. Score no if the generation invents entities, events, or facts that are not in the passages.',
+      prompt: 'Set of facts:\n\n{documents}\n\nLLM generation: {generation}',
+      outputSchemaId: groundedSch.id,
+      bindTools: true,
+    };
+    const grounded = addNode('router', CX, 980, 'grounded?');
+    const budget = addNode('router', CX + 300, 980, 'budget spent?');
+    const gradeAns = addNode('action', CX, 1100, 'grade_answer');
+    nodes[gradeAns].effect = 'set useful from binary_score';
+    nodes[gradeAns].detail = {
+      kind: 'llm',
+      reads: ['question', 'generation'],
+      writes: [{ key: 'useful', op: 'set', expr: 'response.binary_score == "yes"' }],
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      system: 'You grade whether an answer addresses the question. Score yes if it tries to answer from the available information. Score no if it is off-topic or ignores the question.',
+      prompt: 'User question: {question}\n\nLLM generation: {generation}',
+      outputSchemaId: usefulSch.id,
+      bindTools: true,
+    };
+    const useful = addNode('router', CX, 1220, 'useful?');
+    const end = addNode('end', CX, 1340, 'end');
+    link('start', route);
+    link(route, inCorpus);
+    link(inCorpus, retrieve, 'yes');
+    link(inCorpus, web, 'no');
+    link(retrieve, gradeDocs);
+    link(gradeDocs, docsOk);
+    link(docsOk, gen, 'yes');
+    link(docsOk, web, 'no');
+    link(web, gen);
+    link(gen, gradeGen);
+    link(gradeGen, grounded);
+    link(grounded, gradeAns, 'yes');
+    link(grounded, budget, 'no');
+    link(budget, end, 'yes');
+    link(budget, gen, 'no');
+    link(gradeAns, useful);
+    link(useful, end, 'yes');
+    link(useful, web, 'no');
+    setRouterTruthy(inCorpus, 'use_vectorstore');
+    setRouterTruthy(docsOk, 'docs_relevant');
+    setRouterTruthy(grounded, 'grounded');
+    setRouterTruthy(useful, 'useful');
+    nodes[budget].detail.predLeft = 'attempts';
+    nodes[budget].detail.predOp = '>=';
+    nodes[budget].detail.predRightMode = 'key';
+    nodes[budget].detail.predRight = 'max_attempts';
+    nodes[budget].detail.reads = ['attempts', 'max_attempts'];
+    nodes[budget].detail.stopMode = 'predicate';
+    syncPredicateCondition(nodes[budget]);
+    applyTemplateState([
+      { key: 'question', val: '', type: 'str' },
+      { key: 'documents', val: '[]', type: 'list' },
+      { key: 'generation', val: '', type: 'str' },
+      { key: 'use_vectorstore', val: 'true', type: 'bool' },
+      { key: 'docs_relevant', val: 'false', type: 'bool' },
+      { key: 'grounded', val: 'false', type: 'bool' },
+      { key: 'useful', val: 'false', type: 'bool' },
+      { key: 'attempts', val: '0', type: 'int' },
+      { key: 'max_attempts', val: '3', type: 'int' },
+    ]);
+    applyTemplateOutputs([
+      { key: 'generation', schemaId: genSch.id, field: 'generation' },
+    ]);
+    stackColumn(['start', route, inCorpus, retrieve, gradeDocs, docsOk, gen, gradeGen, grounded, gradeAns, useful, end], CX, 36);
+    placeCentered(web, CX + 300, nodes[inCorpus].y);
+    placeCentered(budget, CX + 300, nodes[grounded].y);
   } else if (key === 'rag') {
     setProblem('RAG pipeline: retrieve documents for a question; if context is enough, generate an answer, otherwise fall back.');
     placeStart(CX, 30);
@@ -7238,6 +7408,28 @@ const FLOW_GUIDES = {
     ],
     wire: 'start → retrieve → generate → grade_generation → grounded? Yes → end. No → budget spent? Yes → end. No → generate.',
   },
+  adaptive_rag: {
+    keys: ['adaptive rag', 'adaptive_rag', 'adaptive'],
+    name: 'Adaptive RAG',
+    whyJob: 'The first decision is which source to trust. Then CRAG grades the corpus; then Self-RAG grades the answer. One graph, three jobs.',
+    doJob: [
+      'Write what corpus you search and what should go to the web instead.',
+      'Cycle: route → retrieve or web → grade docs if retrieved → generate → grounded? → useful? → end, retry, or web.',
+    ],
+    whyRoles: 'route_question is RouteQuery. grade_documents is CRAG. grade_generation and grade_answer are Self-RAG. web_search is Tavily.',
+    roles: [
+      { kind: 'action', name: 'route_question', why: 'vectorstore or web, from RouteQuery' },
+      { kind: 'router', name: 'in_corpus', why: 'retrieve or Tavily?' },
+      { kind: 'action', name: 'retrieve', why: 'fetch passages from the corpus' },
+      { kind: 'action', name: 'grade_documents', why: 'keep relevant docs; set docs_relevant' },
+      { kind: 'action', name: 'web_search', why: 'Tavily if off-corpus, weak docs, or not useful' },
+      { kind: 'action', name: 'generate', why: 'answer from documents; attempts += 1' },
+      { kind: 'action', name: 'grade_generation', why: 'is the answer grounded?' },
+      { kind: 'action', name: 'grade_answer', why: 'does it address the question?' },
+      { kind: 'end', name: 'end', why: 'useful answer, or budget spent' },
+    ],
+    wire: 'start → route_question → in corpus? Yes → retrieve → grade_documents → docs relevant? Yes → generate. No / off-corpus → web_search → generate. generate → grade_generation → grounded? No → retry generate. Yes → grade_answer → useful? Yes → end. No → web_search.',
+  },
   rag: {
     keys: ['rag', 'retriev'],
     name: 'RAG',
@@ -7343,7 +7535,7 @@ const FLOW_GUIDES = {
   },
 };
 
-const FLOW_MATCH_ORDER = ['reflexion', 'reflection', 'plan_execute', 'tool_calling', 'map_reduce', 'supervisor', 'guardrails', 'hitl', 'retry', 'naive_rag', 'crag', 'self_rag', 'rag', 'react', 'simple'];
+const FLOW_MATCH_ORDER = ['reflexion', 'reflection', 'plan_execute', 'tool_calling', 'map_reduce', 'supervisor', 'guardrails', 'hitl', 'retry', 'naive_rag', 'crag', 'self_rag', 'adaptive_rag', 'rag', 'react', 'simple'];
 
 function textHasKey(hay, key) {
   const k = String(key || '').toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '[\\s_-]+');
