@@ -1,0 +1,17 @@
+{
+  "name": "LangCanvas",
+  "install": "npm ci",
+  "terminals": [
+    {
+      "name": "web",
+      "command": "python3 -m http.server 3000 --bind 0.0.0.0",
+      "description": "Static dev server for the LangCanvas frontend (index.html) at http://localhost:3000. The visual canvas, templates, structural Validate, Dry run, and export work fully on this static server. AI features (Analyze/Generate code/Assistant/Live run via /api/*) require `vercel dev` plus GEMINI_API_KEY and Firebase secrets."
+    }
+  ],
+  "ports": [
+    {
+      "name": "web",
+      "port": 3000
+    }
+  ]
+}
