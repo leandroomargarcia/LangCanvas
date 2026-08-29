@@ -571,4 +571,71 @@ const missingClf = await runGraph(joinReportsGraph({ skipClfWrite: true }), '');
 assert.match(missingClf.error || '', /reporte_clasificacion/);
 assert.ok(!missingClf.trace.some(s => s.label === 'supervisor'), 'supervisor must not run with one report');
 
+function joinLlmIdentityWritesGraph() {
+  return {
+    version: 2,
+    stateVars: [
+      { key: 'reporte_habilitaciones', val: '', type: 'str' },
+      { key: 'reporte_clasificacion', val: '', type: 'str' },
+    ],
+    schemas: [
+      {
+        id: 'sch-rep',
+        name: 'Report',
+        fields: [{ key: 'answer', type: 'str' }],
+      },
+    ],
+    nodes: [
+      { id: 'start', type: 'start', label: 'start' },
+      {
+        id: 'hab',
+        type: 'action',
+        label: 'habilitaciones',
+        detail: {
+          kind: 'llm',
+          writes: [{ key: 'reporte_habilitaciones', op: 'set', expr: 'state["reporte_habilitaciones"]' }],
+          outputSchemaId: 'sch-rep',
+        },
+      },
+      {
+        id: 'clf',
+        type: 'action',
+        label: 'clasificacion',
+        detail: {
+          kind: 'llm',
+          writes: [{ key: 'reporte_clasificacion', op: 'set', expr: 'state["reporte_clasificacion"]' }],
+          outputSchemaId: 'sch-rep',
+        },
+      },
+      {
+        id: 'gate',
+        type: 'join',
+        label: 'wait reports',
+        detail: { waitKeys: ['reporte_habilitaciones', 'reporte_clasificacion'] },
+      },
+      { id: 'sup', type: 'action', label: 'supervisor', detail: { kind: 'function', writes: [] } },
+      { id: 'end', type: 'end', label: 'end' },
+    ],
+    edges: [
+      { id: 'e1', from: 'start', to: 'hab' },
+      { id: 'e2', from: 'start', to: 'clf' },
+      { id: 'e3', from: 'hab', to: 'gate' },
+      { id: 'e4', from: 'clf', to: 'gate' },
+      { id: 'e5', from: 'gate', to: 'sup' },
+      { id: 'e6', from: 'sup', to: 'end' },
+    ],
+  };
+}
+
+const llmJoin = await runGraph(joinLlmIdentityWritesGraph(), 'clasificar el expediente');
+assert.equal(llmJoin.error || '', '', llmJoin.error);
+assert.ok(!isEmptyish(llmJoin.state.reporte_habilitaciones), 'hab write should keep LLM output');
+assert.ok(!isEmptyish(llmJoin.state.reporte_clasificacion), 'clf write should keep LLM output');
+assert.ok(llmJoin.trace.some(s => s.type === 'join' && s.status === 'released'));
+assert.ok(llmJoin.trace.some(s => s.label === 'supervisor'));
+
+function isEmptyish(v) {
+  return v == null || v === '';
+}
+
 console.log('run-graph tests ok');
