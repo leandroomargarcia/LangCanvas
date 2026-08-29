@@ -1134,9 +1134,8 @@
       <div class="lg-assist-chips" id="assist-chips">
         <button type="button" onclick="askAssistant('next')">Next step</button>
         <button type="button" onclick="askAssistant('I am stuck on this step. Walk me through the exact clicks and fields.')">I am stuck</button>
-        <button type="button" onclick="askAssistant('Why does this step exist? Explain the engineering reason, then remind me what to do.')">Why this?</button>
-        <button type="button" onclick="validateGraph()">validate</button>
-        <button type="button" class="primary" onclick="analyzeDesign()">analyze AI</button>
+        <button type="button" onclick="askAssistant('Review my graph against the problem to solve. Do not replace it with a template.')">Review</button>
+        <button type="button" onclick="askAssistant('Help me run this in the execution panel.')">Run it</button>
       </div>
       <form class="lg-assist-compose" onsubmit="sendAssistant(event)">
         <textarea id="assist-input" placeholder="Say next when the step is done…" rows="2" onkeydown="assistKeydown(event)"></textarea>
@@ -5785,6 +5784,7 @@ function emptyCanvas() {
 }
 
 function applyOpenedGraph(row) {
+  persistAssistantChat();
   currentGraphId = row.id;
   currentGraphStatus = row.status || 'draft';
   rememberOpenGraph(row.id);
@@ -5794,6 +5794,7 @@ function applyOpenedGraph(row) {
   showEditorShell();
   setSaveStatus('Saved');
   centerGraphInView();
+  loadAssistantChat();
 }
 
 async function openDesign(id) {
@@ -5814,6 +5815,7 @@ async function createNewDesign() {
   const api = graphsApi();
   if (!api || !api.uid()) return;
   await flushGraphSave();
+  persistAssistantChat();
   emptyCanvas();
   const titleEl = document.getElementById('graph-title');
   if (titleEl) titleEl.value = '';
@@ -5824,6 +5826,7 @@ async function createNewDesign() {
     rememberOpenGraph(id);
     showEditorShell();
     setSaveStatus('Saved');
+    loadAssistantChat();
   } catch (err) {
     setSaveStatus('Couldn’t save');
     const grid = document.getElementById('graph-library-grid');
@@ -5924,6 +5927,7 @@ async function renderGraphLibrary() {
 
 async function showGraphLibrary() {
   await flushGraphSave();
+  persistAssistantChat();
   rememberOpenGraph(null);
   currentGraphId = null;
   await renderGraphLibrary();
@@ -5940,6 +5944,7 @@ window.onLangCanvasGuest = function onLangCanvasGuest() {
   setSaveStatus('');
   const titleEl = document.getElementById('graph-title');
   if (titleEl) titleEl.value = '';
+  loadAssistantChat();
 };
 
 (function wireGraphAutosave() {
@@ -7678,12 +7683,24 @@ function canvasFitsGuide(g, id) {
   if (!need) return false;
   const have = presentGuideRoleCount(g, guide);
   const min = Math.max(2, Math.ceil(need * 0.6));
-  return have >= Math.min(min, need);
+  if (have < Math.min(min, need)) return false;
+  const roster = guideRoster(guide);
+  const extras = (g.nodes || []).filter(n => {
+    if (n.type !== 'action' && n.type !== 'router') return false;
+    if (isPlaceholderNode(n)) return false;
+    const name = n.label || '';
+    return !roster.some(r => {
+      const re = new RegExp(String(r.name || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '[\\s_]*'), 'i');
+      return re.test(name);
+    });
+  });
+  if (extras.length >= 2) return false;
+  return true;
 }
 
 function inferCoachPattern(g, question) {
   const explicit = matchFlowId(question);
-  if (explicit) {
+  if (explicit && (!((g.nodes || []).some(n => n.type === 'action')) || canvasFitsGuide(g, explicit))) {
     coachPattern = explicit;
     return coachPattern;
   }
@@ -8091,7 +8108,7 @@ function detectLesson(g, question) {
 }
 
 function openingCoachMessage() {
-  return 'I look at your canvas and walk one step at a time — why it exists, then what to click. Ask in your language. If something is unclear, say so and I will explain it another way.';
+  return 'Five steps, one graph: (1) diagram the flow toward “problem to solve”, (2) shared state + schemas — what each key is for and who reads it, (3) configure each node, (4) review / debug, (5) run it in execution. I remember this chat (Clean wipes it). If this is your own architecture, I will not turn it into a stock template.';
 }
 
 function seedAssistantChat() {
@@ -8101,11 +8118,42 @@ function seedAssistantChat() {
     text: openingCoachMessage(),
   });
   renderAssistant();
+  persistAssistantChat();
 }
 
 function clearAssistantChat() {
   if (assistantBusy) return;
+  try { localStorage.removeItem(assistStoreKey()); } catch (_) { /* ignore */ }
   seedAssistantChat();
+}
+
+function assistStoreKey() {
+  return 'lg-assist-chat:' + (currentGraphId || 'guest');
+}
+
+function persistAssistantChat() {
+  try {
+    localStorage.setItem(assistStoreKey(), JSON.stringify(
+      assistantMessages.filter(m => !m.pending).slice(-40)
+    ));
+  } catch (_) { /* ignore */ }
+}
+
+function loadAssistantChat() {
+  assistantMessages.length = 0;
+  try {
+    const raw = localStorage.getItem(assistStoreKey());
+    const rows = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(rows) && rows.length) {
+      rows.forEach(m => {
+        if (m && m.role && m.text) assistantMessages.push({ role: m.role, text: String(m.text) });
+      });
+    }
+  } catch (_) { /* ignore */ }
+  if (!assistantMessages.length) {
+    assistantMessages.push({ role: 'assistant', text: openingCoachMessage() });
+  }
+  renderAssistant();
 }
 
 function renderAssistant() {
@@ -8174,7 +8222,7 @@ async function sendAssistant(ev) {
 
   const history = assistantMessages
     .filter(m => !m.pending)
-    .slice(-8)
+    .slice(-24)
     .map(m => ({ role: m.role, text: m.text }));
   // history currently includes the user question; API wants prior turns only
   if (history.length && history[history.length - 1].role === 'user') history.pop();
@@ -8230,6 +8278,7 @@ async function sendAssistant(ev) {
     assistantMessages.push({ role: 'assistant', text: reply });
   }
   renderAssistant();
+  persistAssistantChat();
   assistantBusy = false;
   if (sendBtn) sendBtn.disabled = false;
   if (cleanBtn) cleanBtn.disabled = false;
