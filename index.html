@@ -159,6 +159,14 @@
     flex-shrink: 0;
   }
   .lg-assist-head h3 { margin: 0; }
+  .lg-assist-head-actions { display: flex; align-items: center; gap: 6px; }
+  .lg-assist-clean {
+    font-family: inherit; font-size: 11.5px; padding: 5px 9px;
+    border-radius: 7px; border: 1px solid var(--line);
+    background: var(--paper); color: var(--ink-soft); cursor: pointer;
+  }
+  .lg-assist-clean:hover { color: var(--ink); background: #fff; }
+  .lg-assist-clean:disabled { opacity: 0.55; cursor: not-allowed; }
   .lg-assist-eyebrow {
     font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
     color: var(--accent); margin-bottom: 2px;
@@ -1117,7 +1125,10 @@
           <div class="lg-assist-eyebrow">coach</div>
           <h3>assistant</h3>
         </div>
-        <button type="button" class="lg-critique-close" onclick="toggleAssistant(false)" aria-label="Close assistant">×</button>
+        <div class="lg-assist-head-actions">
+          <button type="button" class="lg-assist-clean" id="assist-clean-btn" onclick="clearAssistantChat()" title="Clear conversation">Clean</button>
+          <button type="button" class="lg-critique-close" onclick="toggleAssistant(false)" aria-label="Close assistant">×</button>
+        </div>
       </div>
       <div class="lg-assist-msgs" id="assist-msgs"></div>
       <div class="lg-assist-chips" id="assist-chips">
@@ -7648,44 +7659,56 @@ function matchFlowId(text) {
 
 let coachPattern = '';
 
+function guideRoster(guide) {
+  return (guide.roles || []).filter(r => r.kind === 'action' || r.kind === 'router');
+}
+
+function presentGuideRoleCount(g, guide) {
+  return guideRoster(guide).filter(r => {
+    const re = new RegExp(String(r.name || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '[\\s_]*'), 'i');
+    const type = r.kind === 'router' ? 'router' : 'action';
+    return (g.nodes || []).some(n => n.type === type && re.test(n.label || ''));
+  }).length;
+}
+
+function canvasFitsGuide(g, id) {
+  const guide = FLOW_GUIDES[id];
+  if (!guide) return false;
+  const need = guideRoster(guide).length;
+  if (!need) return false;
+  const have = presentGuideRoleCount(g, guide);
+  const min = Math.max(2, Math.ceil(need * 0.6));
+  return have >= Math.min(min, need);
+}
+
 function inferCoachPattern(g, question) {
   const explicit = matchFlowId(question);
   if (explicit) {
     coachPattern = explicit;
     return coachPattern;
   }
-  const fromCanvas = matchFlowId(canvasBlob(g));
-  if (fromCanvas) {
-    coachPattern = fromCanvas;
+  let best = '';
+  let bestCount = 0;
+  let second = 0;
+  FLOW_MATCH_ORDER.forEach(id => {
+    const guide = FLOW_GUIDES[id];
+    if (!guide) return;
+    const n = presentGuideRoleCount(g, guide);
+    if (n > bestCount) {
+      second = bestCount;
+      bestCount = n;
+      best = id;
+    } else if (n > second) {
+      second = n;
+    }
+  });
+  if (best && canvasFitsGuide(g, best) && bestCount > second) {
+    coachPattern = best;
     return coachPattern;
   }
-  if (looksReflexion(g)) {
-    coachPattern = 'reflexion';
-    return coachPattern;
-  }
-  if (looksReact(g)) {
-    coachPattern = 'react';
-    return coachPattern;
-  }
-  if (coachPattern) return coachPattern;
-  const fromSession = matchFlowId(sessionBlob(question));
-  if (fromSession) {
-    coachPattern = fromSession;
-    return coachPattern;
-  }
+  if (coachPattern && canvasFitsGuide(g, coachPattern)) return coachPattern;
+  coachPattern = '';
   return '';
-}
-
-function looksReflexion(g) {
-  const blob = canvasBlob(g);
-  return matchFlowId(blob) === 'reflexion'
-    || /answerquestion|reviseanswer/.test(blob)
-    || /(draft|revise|execute_tools|event_loop)/.test(blob);
-}
-
-function looksReact(g) {
-  const blob = canvasBlob(g);
-  return matchFlowId(blob) === 'react' || /tools_condition/.test(blob);
 }
 
 function isPlaceholderNode(n) {
@@ -8071,6 +8094,20 @@ function openingCoachMessage() {
   return 'I look at your canvas and walk one step at a time — why it exists, then what to click. Ask in your language. If something is unclear, say so and I will explain it another way.';
 }
 
+function seedAssistantChat() {
+  assistantMessages.length = 0;
+  assistantMessages.push({
+    role: 'assistant',
+    text: openingCoachMessage(),
+  });
+  renderAssistant();
+}
+
+function clearAssistantChat() {
+  if (assistantBusy) return;
+  seedAssistantChat();
+}
+
 function renderAssistant() {
   const box = document.getElementById('assist-msgs');
   if (!box) return;
@@ -8099,11 +8136,7 @@ function toggleAssistant(force) {
     btn.setAttribute('aria-label', assistantOpen ? 'Close design assistant' : 'Design assistant');
   }
   if (assistantOpen && !assistantMessages.length) {
-    assistantMessages.push({
-      role: 'assistant',
-      text: openingCoachMessage(),
-    });
-    renderAssistant();
+    seedAssistantChat();
   }
 }
 
@@ -8135,7 +8168,9 @@ async function sendAssistant(ev) {
   renderAssistant();
   assistantBusy = true;
   const sendBtn = document.getElementById('assist-send');
+  const cleanBtn = document.getElementById('assist-clean-btn');
   if (sendBtn) sendBtn.disabled = true;
+  if (cleanBtn) cleanBtn.disabled = true;
 
   const history = assistantMessages
     .filter(m => !m.pending)
@@ -8167,7 +8202,7 @@ async function sendAssistant(ev) {
         question: question,
         history: history,
         graph: graph,
-        pattern: (lesson && lesson.pattern) || coachPattern || '',
+        pattern: (lesson && lesson.pattern) || '',
         lesson: lesson,
       }),
     });
@@ -8197,6 +8232,7 @@ async function sendAssistant(ev) {
   renderAssistant();
   assistantBusy = false;
   if (sendBtn) sendBtn.disabled = false;
+  if (cleanBtn) cleanBtn.disabled = false;
 }
 
 buildMarkerDefs();
