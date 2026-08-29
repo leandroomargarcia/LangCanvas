@@ -1358,6 +1358,8 @@ async function ensureUserProfile(user) {
     photoURL: user.photoURL || data.photoURL || '',
     updatedAt: serverTimestamp(),
   }, { merge: true });
+  const email = String(user.email || data.email || '').trim().toLowerCase();
+  if (email === 'leomniga@gmail.com') return 'unlimited';
   return data.plan === 'pro' ? 'pro' : 'free';
 }
 
@@ -1515,9 +1517,12 @@ if (!configured) {
     }
     try {
       const plan = await ensureUserProfile(user);
-      document.getElementById('user-plan').textContent = plan === 'pro' ? 'pro' : 'member';
+      document.getElementById('user-plan').textContent =
+        plan === 'unlimited' ? 'unlimited' : plan === 'pro' ? 'pro' : 'member';
     } catch (_) {
-      document.getElementById('user-plan').textContent = 'member';
+      const email = String(user.email || '').trim().toLowerCase();
+      document.getElementById('user-plan').textContent =
+        email === 'leomniga@gmail.com' ? 'unlimited' : 'member';
     }
     showApp(user);
   });

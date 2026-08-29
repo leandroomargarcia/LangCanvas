@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import admin from 'firebase-admin';
 import { buildCoachPack, formatCoachUserMessage } from '../lib/coach-playbook.js';
 import { generateGeminiText } from '../lib/gemini.js';
+import { isUnlimitedEmail } from '../lib/quota.js';
 
 export const config = { maxDuration: 30 };
 
@@ -194,6 +195,13 @@ async function ensureUserAndReserveQuota(decoded) {
         updatedAt: now,
       }, { merge: true });
     }
+    if (isUnlimitedEmail(email) || isUnlimitedEmail(userData && userData.email)) {
+      const count = usageSnap.exists ? Number(usageSnap.data().count || 0) : 0;
+      tx.set(usageRef, {
+        uid, date: day, count: count + 1, plan: 'unlimited', updatedAt: now,
+      }, { merge: true });
+      return { uid, plan: 'unlimited' };
+    }
     const limit = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
     const count = usageSnap.exists ? Number(usageSnap.data().count || 0) : 0;
     if (count >= limit) {
@@ -249,7 +257,7 @@ export default async function handler(req, res) {
   const uidKey = decoded ? decoded.uid : `ip:${ipHash(clientIp(req))}`;
   const lastOk = lastOkByUid.get(uidKey) || 0;
   const now = Date.now();
-  if (now - lastOk < COOLDOWN_MS) {
+  if (!isUnlimitedEmail(decoded && decoded.email) && now - lastOk < COOLDOWN_MS) {
     const wait = Math.ceil((COOLDOWN_MS - (now - lastOk)) / 1000);
     res.setHeader('Retry-After', String(wait));
     return res.status(429).json({ error: `Please wait ${wait}s before another question.` });

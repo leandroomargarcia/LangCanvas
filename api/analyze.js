@@ -6,6 +6,7 @@ import admin from 'firebase-admin';
 import { Client } from 'langsmith';
 import { traceable } from 'langsmith/traceable';
 import { generateGeminiText } from '../lib/gemini.js';
+import { isUnlimitedEmail } from '../lib/quota.js';
 
 const SYSTEM_PROMPT =
   'You are an expert in designing agents with LangGraph. Critique the graph design in English. ' +
@@ -258,6 +259,15 @@ async function ensureUserAndReserveQuota(decoded) {
         }, { merge: true });
       }
 
+      if (isUnlimitedEmail(email) || isUnlimitedEmail(userData && userData.email)) {
+        const count = usageSnap.exists ? Number(usageSnap.data().count || 0) : 0;
+        const next = count + 1;
+        tx.set(usageRef, {
+          uid, date: day, count: next, plan: 'unlimited', updatedAt: now,
+        }, { merge: true });
+        return { uid, email, plan: 'unlimited', limit: null, used: next, remaining: null };
+      }
+
       const limit = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
       const count = usageSnap.exists ? Number(usageSnap.data().count || 0) : 0;
       if (count >= limit) {
@@ -383,7 +393,9 @@ export default async function handler(req, res) {
   }
 
   const softKey = decoded ? decoded.uid : `ip:${ipHash(clientIp(req))}`;
-  const soft = checkSoftLimits(softKey);
+  const soft = isUnlimitedEmail(decoded && decoded.email)
+    ? { limited: false }
+    : checkSoftLimits(softKey);
   if (soft.limited) {
     res.setHeader('Retry-After', String(soft.retryAfter || 60));
     return res.status(soft.status).json({ error: soft.error });

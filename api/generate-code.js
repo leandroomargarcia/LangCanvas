@@ -5,6 +5,7 @@ import admin from 'firebase-admin';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { generateGeminiText } from '../lib/gemini.js';
+import { isUnlimitedEmail } from '../lib/quota.js';
 
 export const config = { maxDuration: 60 };
 
@@ -150,6 +151,15 @@ async function ensureUserAndReserveQuota(decoded) {
         photoURL: decoded.picture || userData.photoURL || '',
         updatedAt: now,
       }, { merge: true });
+    }
+
+    if (isUnlimitedEmail(email) || isUnlimitedEmail(userData && userData.email)) {
+      const count = usageSnap.exists ? Number(usageSnap.data().count || 0) : 0;
+      const next = count + 1;
+      tx.set(usageRef, {
+        uid, date: day, count: next, plan: 'unlimited', updatedAt: now,
+      }, { merge: true });
+      return { uid, email, plan: 'unlimited', limit: null, used: next, remaining: null };
     }
 
     const limit = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
@@ -454,7 +464,9 @@ export default async function handler(req, res) {
     return res.status(err.status || 401).json({ error: err.message || 'Sign in required.' });
   }
 
-  const soft = checkSoftLimits(decoded.uid);
+  const soft = isUnlimitedEmail(decoded.email)
+    ? { limited: false }
+    : checkSoftLimits(decoded.uid);
   if (soft.limited) {
     res.setHeader('Retry-After', String(soft.retryAfter || 60));
     return res.status(soft.status).json({ error: soft.error });
