@@ -39,7 +39,8 @@ CRITICAL MAPPING RULES (LangCanvas → LangGraph):
 13. Tool invoke vs batch: if the shared-state key in toolArgs.fromKey has type "list" or "list[str]", call tool.batch([{param: item} for item in state[fromKey]]); otherwise tool.invoke({param: state[fromKey]}).
 14. Router detail.stopMode "tool_rounds": stop when sum(isinstance(m, ToolMessage) for m in state["messages"]) >= N. N is detail.stopMax as a literal, or the initial value of that shared-state key. Branch "si" = stop, "no" = continue. Do not require a tool_visits counter in state.
 15. Graph "outputs" array is what the compiled graph should print from the last AIMessage tool call: each {key, schemaId, field} maps to args.get("field").
-16. Output plain Python only. Multi-file: "# chains.py" / "# main.py" headers. No markdown fences. No trailing junk.`;
+16. type "join" → real add_node("label", fn, defer=True). It is a barrier, not a router. Incoming workers add_edge to the join; the join add_edge to the next node (usually the supervisor). The join function may return {}. It must not run until every incoming branch has finished AND every waitKeys / waitUntil value is non-empty. Do NOT use add_conditional_edges for a join.
+17. Output plain Python only. Multi-file: "# chains.py" / "# main.py" headers. No markdown fences. No trailing junk.`;
 
 const hitsByUid = new Map();
 const lastOkByUid = new Map();
@@ -319,6 +320,33 @@ function buildCodeSpec(graph) {
       effect: n.effect || '',
     }));
 
+  const joins = nodes
+    .filter((n) => n.type === 'join')
+    .map((n) => {
+      const preds = edges
+        .filter((e) => e.to === n.id)
+        .map((e) => {
+          const from = byId[e.from];
+          if (!from || from.type === 'start') return 'START';
+          return nameOf[e.from];
+        })
+        .filter(Boolean);
+      const outs = edges
+        .filter((e) => e.from === n.id)
+        .map((e) => {
+          const to = byId[e.to];
+          return to?.type === 'end' ? 'END' : nameOf[e.to];
+        });
+      return {
+        name: nameOf[n.id],
+        label: n.label,
+        defer: true,
+        waitUntil: Array.isArray(n.detail?.waitKeys) ? n.detail.waitKeys : [],
+        predecessors: [...new Set(preds)],
+        next: outs,
+      };
+    });
+
   const routers = nodes
     .filter((n) => n.type === 'router')
     .map((n) => {
@@ -362,11 +390,11 @@ function buildCodeSpec(graph) {
     if (from.type === 'router' || to.type === 'router') continue;
     const fromName = from.type === 'start' ? 'START' : nameOf[e.from];
     const toName = to.type === 'end' ? 'END' : nameOf[e.to];
-    if (fromName === 'START' && to.type === 'action') {
-      plainEdges.push({ from: 'START', to: toName, note: 'entry' });
-    } else if (from.type === 'action' && to.type === 'action') {
-      plainEdges.push({ from: fromName, to: toName });
-    } else if (from.type === 'action' && to.type === 'end') {
+    if (fromName === 'START' && (to.type === 'action' || to.type === 'join')) {
+      plainEdges.push({ from: 'START', to: toName, note: to.type === 'join' ? 'to join' : 'entry' });
+    } else if ((from.type === 'action' || from.type === 'join') && (to.type === 'action' || to.type === 'join')) {
+      plainEdges.push({ from: fromName, to: toName, note: to.type === 'join' ? 'fan-in' : (from.type === 'join' ? 'after barrier' : '') });
+    } else if ((from.type === 'action' || from.type === 'join') && to.type === 'end') {
       plainEdges.push({ from: fromName, to: 'END' });
     }
   }
@@ -374,7 +402,8 @@ function buildCodeSpec(graph) {
   return {
     problem: typeof graph?.problem === 'string' ? graph.problem.slice(0, 500) : '',
     stateVars: stateVars.map((v) => ({ key: v.key, val: v.val })).slice(0, 30),
-    add_nodes: actions,
+    add_nodes: actions.concat(joins.map((j) => ({ name: j.name, label: j.label, defer: true }))),
+    joins,
     routers_as_conditional_edges_only: routers,
     plain_edges: plainEdges,
     rules: [
@@ -383,6 +412,7 @@ function buildCodeSpec(graph) {
       'For each router, from each predecessor call add_conditional_edges(pred, route_fn, mapping)',
       'Mapping keys = branch labels; values = target node name or END',
       'Do not reference internal canvas ids',
+      'Joins are real add_node(..., defer=True). Wait until waitUntil keys are non-empty, then edge to next.',
     ],
   };
 }

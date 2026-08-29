@@ -494,6 +494,7 @@
   }
   .lg-node.n-action { border-radius: 5px; }
   .lg-node.n-router { border-radius: 26px; border-style: dashed; }
+  .lg-node.n-join { border-radius: 8px; border-style: double; border-width: 3px; min-width: 92px; }
   .lg-node.n-start, .lg-node.n-end { border-radius: 999px; padding: 14px 30px; }
   .lg-node.active-run { outline: 3px solid #E0A72E; outline-offset: 3px; }
   .lg-node.drop-target { outline: 2px dashed var(--accent); outline-offset: 4px; }
@@ -997,6 +998,7 @@
       <div class="grp">
         <button class="lg-btn" onclick="addNode('action')">+ action</button>
         <button class="lg-btn" onclick="addNode('router')" title="Router: branch on one or more state checks">+ conditional</button>
+        <button class="lg-btn" onclick="addNode('join')" title="Barrier: wait until every incoming report is present">+ join</button>
         <button class="lg-btn" onclick="addNode('end')">+ end</button>
       </div>
     </div>
@@ -1670,7 +1672,7 @@ function closeInlineEditor() {
 
 function addNode(type, x, y, label) {
   const id = uid(type);
-  const defaultLabel = type === 'action' ? 'new action' : type === 'router' ? 'evaluate' : 'end';
+  const defaultLabel = type === 'action' ? 'new action' : type === 'router' ? 'evaluate' : type === 'join' ? 'join' : 'end';
   nodes[id] = {
     id, type,
     label: label || defaultLabel,
@@ -1710,8 +1712,11 @@ function renderNodes() {
       inner += '<span class="lg-detail-flag" title="' + escapeHtml(issues.join(' · ')) + '">!</span>';
     }
     inner += escapeHtml(n.label) + '</div>';
-    if ((n.type === 'action' || n.type === 'router') && n.effect) {
+    if ((n.type === 'action' || n.type === 'router' || n.type === 'join') && n.effect) {
       inner += '<div class="lg-effect">' + escapeHtml(n.effect) + '</div>';
+    }
+    if (n.type === 'join' && n.detail && (n.detail.waitKeys || []).length) {
+      inner += '<div class="lg-node-badges"><span class="lg-node-badge">wait ' + escapeHtml((n.detail.waitKeys || []).join(' · ')) + '</span></div>';
     }
     if (n.type === 'router' && n.detail && n.detail.stopMode !== 'tool_rounds') {
       const pred = formatPredicate(n.detail);
@@ -3116,6 +3121,20 @@ function stepRun() {
     renderNodes();
     return;
   }
+  if (n.type === 'join') {
+    const preds = edges.filter(e => e.to === n.id).map(e => e.from);
+    const waiting = preds.filter(pid => pid !== 'start' && !visitCounts[pid]);
+    if (waiting.length) {
+      const other = nodes[waiting[0]];
+      logEntry('join "' + n.label + '" holds the first report and waits for "' + ((other && other.label) || waiting[0]) + '".');
+      advanceTo(waiting[0], 'other incoming branch still missing');
+      return;
+    }
+    if (outs.length < 1) { logEntry('this join has no outgoing connection. Cannot continue.'); return; }
+    logEntry('join "' + n.label + '": both incoming reports are here. Continue to the next node.');
+    advanceTo(outs[0].to, 'barrier released');
+    return;
+  }
   if (outs.length === 0) {
     logEntry('the node "' + n.label + '" has no outgoing connection. Execution stopped.');
     return;
@@ -3305,7 +3324,7 @@ async function startCanvasRun(live) {
   } catch (err) {
     result = { live: !!live, trace: [], outputs: [], error: err.message || 'Could not reach the run API.' };
   }
-  const last = (result.trace || []).filter(s => s.type === 'action' || s.type === 'router' || s.type === 'end').pop();
+  const last = (result.trace || []).filter(s => s.type === 'action' || s.type === 'router' || s.type === 'join' || s.type === 'end').pop();
   if (last && last.label) {
     const n = Object.values(nodes).find(x => x.label === last.label);
     if (n) runCurrent = n.id;
@@ -3322,6 +3341,7 @@ function stateVarNames() {
 
 function defaultDetail(type) {
   if (type === 'action') return { kind: 'function', reads: [], writes: [] };
+  if (type === 'join') return { waitKeys: [], reads: [] };
   if (type === 'router') {
     return {
       reads: [],
@@ -3540,6 +3560,14 @@ function setRouterTruthy(id, key) {
 
 function ensureNodeDetail(n) {
   if (!n) return n;
+  if (n.type === 'join') {
+    const d = (n.detail && typeof n.detail === 'object') ? n.detail : {};
+    n.detail = {
+      waitKeys: Array.isArray(d.waitKeys) ? d.waitKeys.map(String).filter(Boolean) : [],
+      reads: Array.isArray(d.reads) ? d.reads.map(String) : [],
+    };
+    return n;
+  }
   if (n.type !== 'action' && n.type !== 'router') {
     delete n.detail;
     return n;
@@ -3656,6 +3684,14 @@ function nodeDetailIssues(n) {
       if (id && !schemaById(id)) issues.push('tool handles a missing schema');
     });
   }
+  if (n.type === 'join') {
+    (n.detail.waitKeys || []).forEach(k => {
+      if (k && !keys.has(k)) issues.push('wait key "' + k + '" is not in shared state');
+    });
+    if (!(n.detail.waitKeys || []).length) {
+      issues.push('join has no keys to wait for');
+    }
+  }
   if (n.type === 'router') {
     if (n.detail.stopMode === 'tool_rounds') {
       if (n.detail.stopMaxMode !== 'literal' && n.detail.stopMax && !keys.has(n.detail.stopMax)) {
@@ -3697,6 +3733,9 @@ function renameStateKeyInDetails(prev, next) {
     }
     if (Array.isArray(n.detail.toolArgs)) {
       n.detail.toolArgs.forEach(a => { if (a.fromKey === prev) a.fromKey = next; });
+    }
+    if (Array.isArray(n.detail.waitKeys)) {
+      n.detail.waitKeys = n.detail.waitKeys.map(k => k === prev ? next : k);
     }
     if (n.detail.predLeft === prev) n.detail.predLeft = next;
     if (n.detail.predRightMode === 'key' && n.detail.predRight === prev) n.detail.predRight = next;
@@ -3751,7 +3790,7 @@ let lastDetailNodeId = null;
 function selectedDetailNode() {
   if (selected.size !== 1) return null;
   const n = nodes[[...selected][0]];
-  if (!n || (n.type !== 'action' && n.type !== 'router')) return null;
+  if (!n || (n.type !== 'action' && n.type !== 'router' && n.type !== 'join')) return null;
   return ensureNodeDetail(n);
 }
 
@@ -3963,11 +4002,65 @@ function renderNodeDetail() {
   head.className = 'lg-detail-head';
   const kindLabel = n.type === 'action'
     ? (n.detail.kind === 'llm' ? 'LLM node' : n.detail.kind === 'tool' ? 'tool node' : 'function')
-    : 'conditional · router';
+    : n.type === 'join' ? 'join · wait' : 'conditional · router';
   head.innerHTML =
     '<div class="name"><span class="dot" style="background:' + escapeHtml(n.color) + '"></span><span>' + escapeHtml(n.label) + '</span></div>' +
     '<span class="lg-kind-badge" style="color:' + escapeHtml(n.color) + '">' + escapeHtml(kindLabel) + '</span>';
   panel.appendChild(head);
+
+  if (n.type === 'join') {
+    const hint = document.createElement('div');
+    hint.className = 'lg-detail-hint';
+    hint.textContent = 'A barrier, not a branch. Incoming reports wait here. The next node (supervisor) runs only when every listed key is present.';
+    panel.appendChild(hint);
+    addDetailLabel(panel, 'wait until present');
+    const row = document.createElement('div');
+    row.className = 'lg-chip-row';
+    const keys = new Set(stateVarNames());
+    (n.detail.waitKeys || []).forEach((k, i) => {
+      const chip = document.createElement('span');
+      chip.className = 'lg-chip' + (keys.has(k) ? '' : ' warn');
+      chip.innerHTML = escapeHtml(k) + '<span class="rm" title="remove">×</span>';
+      chip.querySelector('.rm').addEventListener('click', () => {
+        n.detail.waitKeys.splice(i, 1);
+        n.detail.reads = n.detail.waitKeys.slice();
+        renderNodes();
+        renderNodeDetail();
+      });
+      row.appendChild(chip);
+    });
+    appendChipSelect(row, unusedStateKeys(n.detail.waitKeys || []), (key) => {
+      if (!Array.isArray(n.detail.waitKeys)) n.detail.waitKeys = [];
+      n.detail.waitKeys.push(key);
+      n.detail.reads = n.detail.waitKeys.slice();
+      renderNodes();
+      renderNodeDetail();
+    });
+    panel.appendChild(row);
+    const suggested = [];
+    edges.filter(e => e.to === n.id).forEach(e => {
+      const pred = nodes[e.from];
+      ((pred && pred.detail && pred.detail.writes) || []).forEach(w => {
+        if (w && w.key && suggested.indexOf(w.key) < 0 && (n.detail.waitKeys || []).indexOf(w.key) < 0) {
+          suggested.push(w.key);
+        }
+      });
+    });
+    if (suggested.length) {
+      const fill = document.createElement('button');
+      fill.type = 'button';
+      fill.className = 'lg-pred-add';
+      fill.textContent = 'use incoming writes (' + suggested.join(', ') + ')';
+      fill.addEventListener('click', () => {
+        n.detail.waitKeys = [...new Set((n.detail.waitKeys || []).concat(suggested))];
+        n.detail.reads = n.detail.waitKeys.slice();
+        renderNodes();
+        renderNodeDetail();
+      });
+      panel.appendChild(fill);
+    }
+    return;
+  }
 
   if (n.type === 'action') {
     const kindRow = document.createElement('select');
@@ -4541,6 +4634,8 @@ function runStructuralValidation() {
     if (n.type !== 'start' && incoming === 0) { errors.push('"' + n.label + '" has no incoming connection (it never runs).'); badNodes.add(id); }
     if (n.type !== 'end' && outgoing === 0) { errors.push('"' + n.label + '" has no outgoing connection (the graph hangs there).'); badNodes.add(id); }
     if (n.type === 'router' && outgoing < 2) { errors.push('"' + n.label + '" is conditional but has fewer than two outputs: not a real decision.'); badNodes.add(id); }
+    if (n.type === 'join' && incoming < 2) { warnings.push('"' + n.label + '" is a join but has fewer than two incoming arrows: nothing to wait for.'); badNodes.add(id); }
+    if (n.type === 'join' && outgoing < 1) { errors.push('"' + n.label + '" is a join with no outgoing arrow.'); badNodes.add(id); }
   });
 
   const reachable = reachableFromStart();
@@ -5752,7 +5847,7 @@ function serializeGraph() {
     outputs: graphOutputs.map(o => ({ key: o.key, schemaId: o.schemaId, field: o.field })),
     nodes: Object.values(nodes).map(n => {
       const row = { id: n.id, type: n.type, label: n.label, effect: n.effect, color: n.color, x: n.x, y: n.y };
-      if ((n.type === 'action' || n.type === 'router') && n.detail) row.detail = JSON.parse(JSON.stringify(n.detail));
+      if ((n.type === 'action' || n.type === 'router' || n.type === 'join') && n.detail) row.detail = JSON.parse(JSON.stringify(n.detail));
       return row;
     }),
     edges: edges.map(e => {
@@ -6953,6 +7048,18 @@ function buildLocalSkeletonCode() {
   });
 
   Object.values(nodes).forEach(n => {
+    if (n.type !== 'join') return;
+    const keys = ((n.detail && n.detail.waitKeys) || []).filter(Boolean);
+    code += 'def ' + nameOf[n.id] + '(state: State) -> dict:\n';
+    code += '    # barrier: wait until ' + (keys.length ? keys.join(' and ') : 'all incoming branches') + '\n';
+    if (keys.length) {
+      code += '    if not all(state.get(k) for k in (' + keys.map(k => '"' + k + '"').join(', ') + ')):\n';
+      code += '        raise RuntimeError("join is still waiting for a report")\n';
+    }
+    code += '    return {}\n\n\n';
+  });
+
+  Object.values(nodes).forEach(n => {
     if (n.type !== 'router') return;
     const outs = edges.filter(e => e.from === n.id);
     const labels = outs.map((e, i) => branchKey(e, i));
@@ -6984,6 +7091,7 @@ function buildLocalSkeletonCode() {
   code += 'builder = StateGraph(State)\n';
   Object.values(nodes).forEach(n => {
     if (n.type === 'action') code += 'builder.add_node("' + nameOf[n.id] + '", ' + nameOf[n.id] + ')\n';
+    if (n.type === 'join') code += 'builder.add_node("' + nameOf[n.id] + '", ' + nameOf[n.id] + ', defer=True)\n';
   });
   code += '\n';
 
@@ -7202,7 +7310,7 @@ function fallbackCopy(text) {
 
 function buildAnalysisPrompt() {
   const g = serializeGraph();
-  const nodeLines = g.nodes.filter(n => n.type !== 'start' && n.type !== 'end').map(n => '- ' + n.label + ' (' + (n.type === 'router' ? 'conditional' : 'action') + ')' + (n.effect ? ' — effect: ' + n.effect : '')).join('\n');
+  const nodeLines = g.nodes.filter(n => n.type !== 'start' && n.type !== 'end').map(n => '- ' + n.label + ' (' + (n.type === 'router' ? 'conditional' : n.type === 'join' ? 'join' : 'action') + ')' + (n.effect ? ' — effect: ' + n.effect : '')).join('\n');
   const edgeLines = g.edges.map(e => {
     const from = nodes[e.from] ? nodes[e.from].label : e.from;
     const to = nodes[e.to] ? nodes[e.to].label : e.to;
@@ -7467,6 +7575,10 @@ function compactGraphForCoach() {
           };
           row.when = formatPredicate(d);
         }
+      }
+      if (n.type === 'join') {
+        row.kind = 'join';
+        row.waitUntil = Array.isArray(d.waitKeys) ? d.waitKeys.slice() : [];
       }
       return row;
     }),
@@ -7935,7 +8047,7 @@ function inferCoachPattern(g, question) {
 }
 
 function isPlaceholderNode(n) {
-  return /^new (action|conditional|node)/i.test(String((n && n.label) || '').trim());
+  return /^new (action|conditional|join|node)/i.test(String((n && n.label) || '').trim());
 }
 
 function flowSketchIncomplete(g, guide) {

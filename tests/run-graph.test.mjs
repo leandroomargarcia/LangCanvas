@@ -506,4 +506,66 @@ const routed = await runGraph(oneFilled, '');
 assert.ok(routed.trace.some(s => s.label === 'both empty?' && s.branch === 'no'), JSON.stringify(routed.trace));
 assert.ok(routed.trace.some(s => s.label === 'search'));
 
+function joinReportsGraph(opts) {
+  const skipClfWrite = opts && opts.skipClfWrite;
+  return {
+    version: 2,
+    stateVars: [
+      { key: 'reporte_habilitaciones', val: '', type: 'str' },
+      { key: 'reporte_clasificacion', val: '', type: 'str' },
+    ],
+    nodes: [
+      { id: 'start', type: 'start', label: 'start' },
+      {
+        id: 'hab',
+        type: 'action',
+        label: 'habilitaciones',
+        detail: {
+          kind: 'function',
+          writes: [{ key: 'reporte_habilitaciones', op: 'set', expr: '"hab-ok"' }],
+        },
+      },
+      {
+        id: 'clf',
+        type: 'action',
+        label: 'clasificacion',
+        detail: {
+          kind: 'function',
+          writes: skipClfWrite ? [] : [{ key: 'reporte_clasificacion', op: 'set', expr: '"clf-ok"' }],
+        },
+      },
+      {
+        id: 'gate',
+        type: 'join',
+        label: 'wait reports',
+        detail: { waitKeys: ['reporte_habilitaciones', 'reporte_clasificacion'] },
+      },
+      { id: 'sup', type: 'action', label: 'supervisor', detail: { kind: 'function', writes: [] } },
+      { id: 'end', type: 'end', label: 'end' },
+    ],
+    edges: [
+      { id: 'e1', from: 'start', to: 'hab' },
+      { id: 'e2', from: 'start', to: 'clf' },
+      { id: 'e3', from: 'hab', to: 'gate' },
+      { id: 'e4', from: 'clf', to: 'gate' },
+      { id: 'e5', from: 'gate', to: 'sup' },
+      { id: 'e6', from: 'sup', to: 'end' },
+    ],
+  };
+}
+
+const bothReports = await runGraph(joinReportsGraph(), '');
+assert.equal(bothReports.error || '', '');
+const bothPath = bothReports.trace.map(s => s.label);
+assert.ok(bothPath.includes('habilitaciones'), bothPath.join(' > '));
+assert.ok(bothPath.includes('clasificacion'), bothPath.join(' > '));
+assert.ok(bothPath.includes('wait reports'), bothPath.join(' > '));
+assert.ok(bothPath.indexOf('supervisor') > bothPath.indexOf('wait reports'), bothPath.join(' > '));
+assert.equal(bothReports.state.reporte_habilitaciones, 'hab-ok');
+assert.equal(bothReports.state.reporte_clasificacion, 'clf-ok');
+
+const missingClf = await runGraph(joinReportsGraph({ skipClfWrite: true }), '');
+assert.match(missingClf.error || '', /reporte_clasificacion/);
+assert.ok(!missingClf.trace.some(s => s.label === 'supervisor'), 'supervisor must not run with one report');
+
 console.log('run-graph tests ok');
