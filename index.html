@@ -410,6 +410,19 @@
     background: #fff; border: 1px solid var(--line); padding: 6px 8px; border-radius: 6px;
   }
   .lg-trace-out { font-size: 12.5px; padding: 8px 10px; background: #EAF7F1; border: 1px solid #B7E0CC; border-radius: 8px; margin-top: 8px; }
+  .lg-trace-card.is-join {
+    border-style: double; border-width: 3px; background: #F7F3EA;
+  }
+  .lg-trace-card.is-join.is-held { background: #F8EEE8; }
+  .lg-join-keys { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .lg-join-key {
+    font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 999px;
+    border: 1px solid #C4B89A; background: #fff;
+  }
+  .lg-join-key.ok { border-color: #8FBF9A; color: #2E6B45; }
+  .lg-join-key.miss { border-color: #D4A59A; color: #9A4336; }
+  .lg-node.ran { box-shadow: 0 0 0 2px rgba(46, 107, 69, 0.28); }
+  .lg-node.n-join.ran { box-shadow: 0 0 0 3px rgba(176, 137, 37, 0.45); }
   .lg-btn:disabled { opacity: 0.55; cursor: not-allowed; }
   .lg-warn { color: #B84B3E; font-size: 12.5px; margin-top: 4px; }
   .lg-canvas-stage {
@@ -1570,6 +1583,7 @@ let runSteps = 0;
 let visitCounts = {};
 let runLog = [];
 let runBusy = false;
+let lastRunLabels = new Set();
 let currentGraphId = null;
 let currentGraphStatus = 'draft';
 let graphDirty = false;
@@ -1767,6 +1781,7 @@ function renderNodes() {
       });
       el.appendChild(xbtn);
     }
+    if (lastRunLabels.has(n.label)) el.classList.add('ran');
     if (runCurrent === n.id) el.classList.add('active-run');
     if (selected.has(n.id)) el.classList.add('selected');
     el.addEventListener('mousedown', (ev) => onNodeMouseDown(ev, n.id));
@@ -3126,12 +3141,12 @@ function stepRun() {
     const waiting = preds.filter(pid => pid !== 'start' && !visitCounts[pid]);
     if (waiting.length) {
       const other = nodes[waiting[0]];
-      logEntry('join "' + n.label + '" holds the first report and waits for "' + ((other && other.label) || waiting[0]) + '".');
+      logEntry('join "' + n.label + '" held the barrier. Still waiting for "' + ((other && other.label) || waiting[0]) + '".');
       advanceTo(waiting[0], 'other incoming branch still missing');
       return;
     }
     if (outs.length < 1) { logEntry('this join has no outgoing connection. Cannot continue.'); return; }
-    logEntry('join "' + n.label + '": both incoming reports are here. Continue to the next node.');
+    logEntry('join "' + n.label + '" released the barrier. Continue to the next node.');
     advanceTo(outs[0].to, 'barrier released');
     return;
   }
@@ -3178,6 +3193,7 @@ function resetRun() {
   runSteps = 0;
   visitCounts = {};
   runLog = [];
+  lastRunLabels = new Set();
   runBusy = false;
   document.getElementById('run-log').innerHTML = '';
   document.getElementById('loop-warn').style.display = 'none';
@@ -3213,6 +3229,21 @@ function renderRunTrace(result) {
     const kind = step.kind || step.type || '';
     let body = '';
     if (step.note) body += '<div>' + escapeHtml(step.note) + (step.branch ? ' → branch “' + escapeHtml(step.branch) + '”' : '') + '</div>';
+    if (step.type === 'join') {
+      const waitKeys = step.waitKeys || Object.keys(step.reads || {});
+      const missing = new Set(step.missing || []);
+      if (waitKeys.length) {
+        body += '<div class="lg-join-keys">' + waitKeys.map(k => {
+          const miss = missing.has(k);
+          const raw = step.reads && step.reads[k];
+          const shown = raw == null || raw === '' ? 'empty' : (typeof raw === 'string' ? raw : prettyJson(raw));
+          return '<span class="lg-join-key ' + (miss ? 'miss' : 'ok') + '">' +
+            escapeHtml(k) + (miss ? ' ✕' : ' ✓') +
+            ' · ' + escapeHtml(String(shown).slice(0, 80)) +
+            '</span>';
+        }).join('') + '</div>';
+      }
+    }
     if (step.llm && step.llm.args) {
       body += '<div class="lg-detail-hint">LLM → ' + escapeHtml(step.llm.schema || 'free text') + '</div>';
       if (step.llm.prompt) {
@@ -3234,10 +3265,16 @@ function renderRunTrace(result) {
     if (step.wrote && Object.keys(step.wrote).length && !step.llm && !step.tool) {
       body += '<pre class="lg-trace-pre">' + escapeHtml(prettyJson(step.wrote)) + '</pre>';
     }
+    const joinClass = step.type === 'join'
+      ? ' is-join' + (step.status === 'held' ? ' is-held' : '')
+      : '';
+    const kindLabel = step.type === 'join'
+      ? (step.status === 'held' ? 'join · held' : 'join · released')
+      : kind;
     parts.push(
-      '<div class="lg-trace-card">' +
+      '<div class="lg-trace-card' + joinClass + '">' +
         '<h4><span class="step-n">' + (i + 1) + '</span> ' + escapeHtml(step.label || '') +
-        '<span class="lg-trace-kind">' + escapeHtml(kind) + '</span></h4>' +
+        '<span class="lg-trace-kind">' + escapeHtml(kindLabel) + '</span></h4>' +
         body +
       '</div>'
     );
@@ -3324,6 +3361,7 @@ async function startCanvasRun(live) {
   } catch (err) {
     result = { live: !!live, trace: [], outputs: [], error: err.message || 'Could not reach the run API.' };
   }
+  lastRunLabels = new Set((result.trace || []).map(s => s.label).filter(Boolean));
   const last = (result.trace || []).filter(s => s.type === 'action' || s.type === 'router' || s.type === 'join' || s.type === 'end').pop();
   if (last && last.label) {
     const n = Object.values(nodes).find(x => x.label === last.label);

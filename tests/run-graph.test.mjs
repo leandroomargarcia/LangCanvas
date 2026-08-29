@@ -561,6 +561,9 @@ assert.ok(bothPath.includes('habilitaciones'), bothPath.join(' > '));
 assert.ok(bothPath.includes('clasificacion'), bothPath.join(' > '));
 assert.ok(bothPath.includes('wait reports'), bothPath.join(' > '));
 assert.ok(bothPath.indexOf('supervisor') > bothPath.indexOf('wait reports'), bothPath.join(' > '));
+const joinStep = bothReports.trace.find(s => s.type === 'join');
+assert.equal(joinStep && joinStep.status, 'released');
+assert.ok(/barrier released/i.test((joinStep && joinStep.note) || ''));
 assert.equal(bothReports.state.reporte_habilitaciones, 'hab-ok');
 assert.equal(bothReports.state.reporte_clasificacion, 'clf-ok');
 
