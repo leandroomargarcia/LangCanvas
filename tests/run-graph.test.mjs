@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { runGraph, flattenSchemaFields, interpolatePrompt, defaultMockAdapters, evalWriteExpr, retrieveDemoDocs } from '../lib/run-graph.js';
+import { runGraph, flattenSchemaFields, interpolatePrompt, defaultMockAdapters, evalWriteExpr, retrieveDemoDocs, evalPredicate, formatPredicate } from '../lib/run-graph.js';
 
 function reflexionGraph() {
   return {
@@ -448,5 +448,62 @@ const webStep = offCorpus.trace.find(s => s.label === 'web_search');
 assert.ok(webStep && webStep.tool && webStep.tool.queries.some(q => /wimbledon/i.test(q)));
 assert.ok(Array.isArray(offCorpus.state.documents) && offCorpus.state.documents.length > 0, 'Tavily should write documents');
 assert.equal(offCorpus.state.use_vectorstore, false);
+
+const andEmpty = {
+  predLeft: 'documents',
+  predOp: 'empty',
+  predJoin: 'and',
+  predExtra: [{ left: 'notes', op: 'empty', rightMode: 'literal', right: '' }],
+};
+assert.equal(evalPredicate({ documents: [], notes: '' }, andEmpty), true);
+assert.equal(evalPredicate({ documents: ['x'], notes: '' }, andEmpty), false);
+assert.equal(evalPredicate({ documents: [], notes: 'kept' }, andEmpty), false);
+assert.equal(formatPredicate(andEmpty), 'documents is empty and notes is empty');
+assert.equal(evalPredicate({ documents: ['x'], notes: '' }, { ...andEmpty, predJoin: 'or' }), true);
+assert.equal(evalPredicate({ docs: {} }, { predLeft: 'docs', predOp: 'empty' }), true);
+assert.equal(evalPredicate({ docs: ['a'] }, { predLeft: 'docs', predOp: 'not_empty' }), true);
+
+function andGateGraph() {
+  return {
+    version: 2,
+    stateVars: [
+      { key: 'documents', val: '[]', type: 'list' },
+      { key: 'notes', val: '', type: 'str' },
+    ],
+    nodes: [
+      { id: 'start', type: 'start', label: 'start' },
+      {
+        id: 'gate',
+        type: 'router',
+        label: 'both empty?',
+        detail: {
+          stopMode: 'predicate',
+          predLeft: 'documents',
+          predOp: 'empty',
+          predJoin: 'and',
+          predExtra: [{ left: 'notes', op: 'empty', rightMode: 'literal', right: '' }],
+        },
+      },
+      { id: 'search', type: 'action', label: 'search', detail: { kind: 'function', writes: [] } },
+      { id: 'end', type: 'end', label: 'end' },
+    ],
+    edges: [
+      { id: 'e1', from: 'start', to: 'gate' },
+      { id: 'e2', from: 'gate', to: 'end', label: 'si' },
+      { id: 'e3', from: 'gate', to: 'search', label: 'no' },
+      { id: 'e4', from: 'search', to: 'end' },
+    ],
+  };
+}
+
+const bothEmpty = await runGraph(andGateGraph(), '');
+assert.ok(bothEmpty.trace.some(s => s.label === 'both empty?' && s.branch === 'si'), JSON.stringify(bothEmpty.trace));
+assert.ok(!bothEmpty.trace.some(s => s.label === 'search'));
+
+const oneFilled = andGateGraph();
+oneFilled.stateVars[1].val = 'already have notes';
+const routed = await runGraph(oneFilled, '');
+assert.ok(routed.trace.some(s => s.label === 'both empty?' && s.branch === 'no'), JSON.stringify(routed.trace));
+assert.ok(routed.trace.some(s => s.label === 'search'));
 
 console.log('run-graph tests ok');

@@ -6,6 +6,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { generateGeminiText } from '../lib/gemini.js';
 import { isUnlimitedEmail } from '../lib/quota.js';
+import { filledClauses, formatPredicate, pythonPredicate } from '../lib/predicate.js';
 
 export const config = { maxDuration: 60 };
 
@@ -20,7 +21,7 @@ const SYSTEM_PROMPT = `You translate a LangCanvas visual graph into working Lang
 CRITICAL MAPPING RULES (LangCanvas → LangGraph):
 1. Use each node's "label" as the Python symbol / add_node name (snake_case). NEVER use internal ids like action_1, router_2, n_3.
 2. type "action" → real graph node via builder.add_node("label", fn).
-3. type "router" / conditional → NOT an add_node. It becomes a routing function used only in add_conditional_edges from its predecessor(s).
+3. type "router" / conditional → NOT an add_node. It becomes a routing function used only in add_conditional_edges from its predecessor(s). If the spec gives python_when (including and / or / not state.get(...) for is-empty), use that exact test in the route function.
 4. type "start" → START / set_entry_point on the first real action after start. Do not add_node("start").
 5. type "end" → END constant. Do not add_node("end").
 6. Edge A→router with branches router→B / router→C means:
@@ -339,11 +340,15 @@ function buildCodeSpec(graph) {
           return nameOf[e.from];
         })
         .filter(Boolean);
+      const d = n.detail || {};
       return {
         name: nameOf[n.id],
         label: n.label,
         effect: n.effect || '',
         route_fn: `route_${nameOf[n.id]}`,
+        when: formatPredicate(d) || '',
+        python_when: filledClauses(d).length ? pythonPredicate(d) : '',
+        join: d.predJoin === 'or' ? 'or' : 'and',
         predecessors: [...new Set(preds)],
         branches: outs,
       };

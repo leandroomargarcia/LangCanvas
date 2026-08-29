@@ -312,6 +312,20 @@
   .lg-write-block { margin-bottom: 8px; }
   .lg-write-block .lg-detail-line { margin-top: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; }
   .lg-pred-row { display: flex; flex-direction: column; gap: 6px; }
+  .lg-pred-block {
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper);
+  }
+  .lg-pred-join {
+    display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  }
+  .lg-pred-join .lg-detail-line { width: auto; flex: 1; }
+  .lg-pred-add {
+    font-family: inherit; font-size: 11.5px; padding: 4px 8px;
+    border: 1px dashed var(--line-strong); border-radius: 7px;
+    background: var(--card); color: var(--ink-soft); cursor: pointer;
+  }
+  .lg-pred-add:hover { color: var(--ink); border-color: var(--accent); }
   .lg-detail-area {
     width: 100%; min-height: 64px; font-family: inherit; font-size: 12px; line-height: 1.4;
     padding: 6px 7px; border: 1px solid var(--line-strong); border-radius: 6px;
@@ -982,7 +996,7 @@
       <div class="sep"></div>
       <div class="grp">
         <button class="lg-btn" onclick="addNode('action')">+ action</button>
-        <button class="lg-btn" onclick="addNode('router')">+ conditional</button>
+        <button class="lg-btn" onclick="addNode('router')" title="Router: branch on one or more state checks">+ conditional</button>
         <button class="lg-btn" onclick="addNode('end')">+ end</button>
       </div>
     </div>
@@ -1698,6 +1712,12 @@ function renderNodes() {
     inner += escapeHtml(n.label) + '</div>';
     if ((n.type === 'action' || n.type === 'router') && n.effect) {
       inner += '<div class="lg-effect">' + escapeHtml(n.effect) + '</div>';
+    }
+    if (n.type === 'router' && n.detail && n.detail.stopMode !== 'tool_rounds') {
+      const pred = formatPredicate(n.detail);
+      if (pred) {
+        inner += '<div class="lg-node-badges"><span class="lg-node-badge">' + escapeHtml(pred) + '</span></div>';
+      }
     }
     if (n.type === 'action' && n.detail) {
       const badges = [];
@@ -3307,9 +3327,11 @@ function defaultDetail(type) {
       reads: [],
       condition: '',
       predLeft: '',
-      predOp: '>=',
-      predRightMode: 'key',
+      predOp: 'empty',
+      predRightMode: 'literal',
       predRight: '',
+      predJoin: 'and',
+      predExtra: [],
       branches: [],
     };
   }
@@ -3423,20 +3445,86 @@ function defaultWriteExpr(op, key) {
   return 'state["' + k + '"]';
 }
 
+function isUnaryPredOp(op) {
+  return op === 'empty' || op === 'not_empty' || op === 'truthy';
+}
+
+function normalizePredClause(c) {
+  const src = c && typeof c === 'object' ? c : {};
+  return {
+    left: String(src.left || '').trim(),
+    op: src.op || 'empty',
+    rightMode: src.rightMode === 'literal' ? 'literal' : 'key',
+    right: src.right != null ? String(src.right) : '',
+  };
+}
+
+function predicateClauses(d) {
+  if (!d) return [];
+  const first = normalizePredClause({
+    left: d.predLeft,
+    op: d.predOp,
+    rightMode: d.predRightMode,
+    right: d.predRight,
+  });
+  const extra = Array.isArray(d.predExtra) ? d.predExtra.map(normalizePredClause) : [];
+  return [first].concat(extra);
+}
+
+function formatPredClause(c) {
+  if (!c || !c.left) return '';
+  if (c.op === 'truthy') return c.left;
+  if (c.op === 'empty') return c.left + ' is empty';
+  if (c.op === 'not_empty') return c.left + ' is not empty';
+  const op = c.op || '>=';
+  const right = c.rightMode === 'literal'
+    ? JSON.stringify(c.right || '')
+    : (c.right || '');
+  return (c.left + ' ' + op + ' ' + right).trim();
+}
+
 function formatPredicate(d) {
-  if (!d || !d.predLeft) return d && d.condition ? d.condition : '';
-  if (d.predOp === 'truthy') return d.predLeft;
-  if (d.predOp === 'empty') return 'not ' + d.predLeft;
-  const op = d.predOp || '>=';
-  const right = d.predRightMode === 'literal'
-    ? JSON.stringify(d.predRight || '')
-    : (d.predRight || '');
-  return (d.predLeft + ' ' + op + ' ' + right).trim();
+  const clauses = predicateClauses(d).filter(c => c.left);
+  if (!clauses.length) return d && d.condition ? d.condition : '';
+  const join = d && d.predJoin === 'or' ? ' or ' : ' and ';
+  return clauses.map(formatPredClause).join(join);
+}
+
+function pythonPredClause(c) {
+  if (!c || !c.left) return 'False';
+  const left = 'state.get("' + String(c.left).replace(/"/g, '\\"') + '")';
+  if (c.op === 'empty') return 'not ' + left;
+  if (c.op === 'not_empty' || c.op === 'truthy') return 'bool(' + left + ')';
+  const right = c.rightMode === 'literal'
+    ? JSON.stringify(c.right || '')
+    : ('state.get("' + String(c.right || '').replace(/"/g, '\\"') + '")');
+  return left + ' ' + (c.op || '>=') + ' ' + right;
+}
+
+function pythonPredicateExpr(d) {
+  const clauses = predicateClauses(d).filter(c => c.left);
+  if (!clauses.length) return 'False';
+  const join = d && d.predJoin === 'or' ? ' or ' : ' and ';
+  return clauses.map(c => {
+    const expr = pythonPredClause(c);
+    return clauses.length > 1 ? '(' + expr + ')' : expr;
+  }).join(join);
+}
+
+function syncPredicateReads(n) {
+  if (!n || !n.detail) return;
+  const keys = [];
+  predicateClauses(n.detail).forEach(c => {
+    if (c.left) keys.push(c.left);
+    if (!isUnaryPredOp(c.op) && c.rightMode !== 'literal' && c.right) keys.push(c.right);
+  });
+  n.detail.reads = [...new Set(keys)];
 }
 
 function syncPredicateCondition(n) {
   if (!n || !n.detail) return;
   n.detail.condition = formatPredicate(n.detail);
+  syncPredicateReads(n);
 }
 
 function setRouterTruthy(id, key) {
@@ -3446,7 +3534,6 @@ function setRouterTruthy(id, key) {
   n.detail.predOp = 'truthy';
   n.detail.predRightMode = 'literal';
   n.detail.predRight = '';
-  n.detail.reads = [key];
   n.detail.stopMode = 'predicate';
   syncPredicateCondition(n);
 }
@@ -3504,9 +3591,18 @@ function ensureNodeDetail(n) {
       reads: Array.isArray(d.reads) ? d.reads.map(String) : [],
       condition: d.condition != null ? String(d.condition) : '',
       predLeft: d.predLeft != null ? String(d.predLeft) : '',
-      predOp: d.predOp || '>=',
+      predOp: d.predOp || (d.predLeft ? '>=' : 'empty'),
       predRightMode: d.predRightMode === 'literal' ? 'literal' : 'key',
       predRight: d.predRight != null ? String(d.predRight) : '',
+      predJoin: d.predJoin === 'or' ? 'or' : 'and',
+      predExtra: Array.isArray(d.predExtra)
+        ? d.predExtra.map(c => ({
+            left: String((c && c.left) || ''),
+            op: (c && c.op) || 'empty',
+            rightMode: (c && c.rightMode) === 'literal' ? 'literal' : 'key',
+            right: c && c.right != null ? String(c.right) : '',
+          }))
+        : [],
       stopMode: d.stopMode === 'tool_rounds' ? 'tool_rounds' : 'predicate',
       stopMaxMode: d.stopMaxMode === 'literal' ? 'literal' : 'key',
       stopMax: d.stopMax != null ? String(d.stopMax) : '',
@@ -3566,17 +3662,20 @@ function nodeDetailIssues(n) {
         issues.push('tool-rounds limit key is not in shared state');
       }
     } else {
-      if (!(n.detail.predLeft || '').trim() && !(n.detail.condition || '').trim()) {
+      const clauses = predicateClauses(n.detail);
+      const filled = clauses.filter(c => c.left);
+      if (!filled.length && !(n.detail.condition || '').trim()) {
         issues.push('conditional has no predicate');
       }
-      if (n.detail.predLeft && !keys.has(n.detail.predLeft)) {
-        issues.push('predicate left side is not in shared state');
-      }
-      if (n.detail.predRightMode !== 'literal' && n.detail.predOp !== 'truthy' && n.detail.predOp !== 'empty') {
-        if (n.detail.predRight && !keys.has(n.detail.predRight)) {
-          issues.push('predicate right side is not in shared state');
+      clauses.forEach((c, i) => {
+        const tag = clauses.length > 1 ? 'check ' + (i + 1) + ' ' : '';
+        if (c.left && !keys.has(c.left)) {
+          issues.push(tag + 'left side is not in shared state');
         }
-      }
+        if (c.left && !isUnaryPredOp(c.op) && c.rightMode !== 'literal' && c.right && !keys.has(c.right)) {
+          issues.push(tag + 'right side is not in shared state');
+        }
+      });
     }
   }
   (n.detail.branches || []).forEach(b => {
@@ -3601,6 +3700,12 @@ function renameStateKeyInDetails(prev, next) {
     }
     if (n.detail.predLeft === prev) n.detail.predLeft = next;
     if (n.detail.predRightMode === 'key' && n.detail.predRight === prev) n.detail.predRight = next;
+    if (Array.isArray(n.detail.predExtra)) {
+      n.detail.predExtra.forEach(c => {
+        if (c.left === prev) c.left = next;
+        if (c.rightMode !== 'literal' && c.right === prev) c.right = next;
+      });
+    }
     syncPredicateCondition(n);
   });
 }
@@ -3682,6 +3787,118 @@ function addDetailLabel(panel, text) {
   panel.appendChild(label);
 }
 
+const PRED_OP_OPTIONS = [
+  ['empty', 'is empty'],
+  ['not_empty', 'is not empty'],
+  ['truthy', 'is truthy'],
+  ['>=', '>='],
+  ['<=', '<='],
+  ['>', '>'],
+  ['<', '<'],
+  ['==', '=='],
+  ['!=', '!='],
+];
+
+function appendPredicateClauseRow(parent, n, clause, onMutate, removable) {
+  const pred = document.createElement('div');
+  pred.className = 'lg-pred-row';
+  const left = document.createElement('select');
+  left.className = 'lg-detail-line';
+  left.innerHTML = '<option value="">state key</option>' + stateVarNames().map(k =>
+    '<option value="' + escapeHtml(k) + '"' + (clause.left === k ? ' selected' : '') + '>' + escapeHtml(k) + '</option>'
+  ).join('');
+  if (clause.left && !stateVarNames().includes(clause.left)) {
+    const dead = document.createElement('option');
+    dead.value = clause.left; dead.textContent = clause.left + ' (missing)'; dead.selected = true;
+    left.appendChild(dead);
+  }
+  left.addEventListener('change', () => {
+    clause.left = left.value;
+    onMutate();
+  });
+  const op = document.createElement('select');
+  op.className = 'lg-detail-line';
+  PRED_OP_OPTIONS.forEach(([val, lab]) => {
+    const o = document.createElement('option');
+    o.value = val; o.textContent = lab;
+    if ((clause.op || 'empty') === val) o.selected = true;
+    op.appendChild(o);
+  });
+  op.addEventListener('change', () => {
+    clause.op = op.value;
+    onMutate();
+    renderNodeDetail();
+  });
+  pred.appendChild(left);
+  pred.appendChild(op);
+  const needsRight = !isUnaryPredOp(clause.op);
+  if (needsRight) {
+    const mode = document.createElement('select');
+    mode.className = 'lg-detail-line';
+    mode.innerHTML =
+      '<option value="key"' + (clause.rightMode !== 'literal' ? ' selected' : '') + '>other key</option>' +
+      '<option value="literal"' + (clause.rightMode === 'literal' ? ' selected' : '') + '>literal</option>';
+    mode.addEventListener('change', () => {
+      clause.rightMode = mode.value;
+      onMutate();
+      renderNodeDetail();
+    });
+    pred.appendChild(mode);
+    if (clause.rightMode === 'literal') {
+      const lit = document.createElement('input');
+      lit.className = 'lg-detail-line';
+      lit.placeholder = '3';
+      lit.value = clause.right || '';
+      lit.addEventListener('input', () => {
+        clause.right = lit.value;
+        onMutate();
+      });
+      pred.appendChild(lit);
+    } else {
+      const right = document.createElement('select');
+      right.className = 'lg-detail-line';
+      right.innerHTML = '<option value="">state key</option>' + stateVarNames().map(k =>
+        '<option value="' + escapeHtml(k) + '"' + (clause.right === k ? ' selected' : '') + '>' + escapeHtml(k) + '</option>'
+      ).join('');
+      right.addEventListener('change', () => {
+        clause.right = right.value;
+        onMutate();
+        renderNodes();
+      });
+      pred.appendChild(right);
+    }
+  }
+  if (removable) {
+    const rm = document.createElement('button');
+    rm.type = 'button';
+    rm.className = 'lg-pred-add';
+    rm.textContent = 'remove check';
+    rm.addEventListener('click', () => {
+      const extras = n.detail.predExtra || [];
+      const i = extras.indexOf(clause);
+      if (i >= 0) extras.splice(i, 1);
+      onMutate();
+      renderNodeDetail();
+      renderNodes();
+    });
+    pred.appendChild(rm);
+  }
+  parent.appendChild(pred);
+}
+
+function firstClauseLive(d) {
+  return {
+    get left() { return d.predLeft || ''; },
+    set left(v) { d.predLeft = v; },
+    get op() { return d.predOp || 'empty'; },
+    set op(v) { d.predOp = v; },
+    get rightMode() { return d.predRightMode === 'literal' ? 'literal' : 'key'; },
+    set rightMode(v) { d.predRightMode = v; },
+    get right() { return d.predRight || ''; },
+    set right(v) { d.predRight = v; },
+  };
+}
+
 function renderReadChips(panel, n) {
   const label = document.createElement('div');
   label.className = 'lg-detail-label';
@@ -3746,7 +3963,7 @@ function renderNodeDetail() {
   head.className = 'lg-detail-head';
   const kindLabel = n.type === 'action'
     ? (n.detail.kind === 'llm' ? 'LLM node' : n.detail.kind === 'tool' ? 'tool node' : 'function')
-    : 'conditional';
+    : 'conditional · router';
   head.innerHTML =
     '<div class="name"><span class="dot" style="background:' + escapeHtml(n.color) + '"></span><span>' + escapeHtml(n.label) + '</span></div>' +
     '<span class="lg-kind-badge" style="color:' + escapeHtml(n.color) + '">' + escapeHtml(kindLabel) + '</span>';
@@ -4129,76 +4346,50 @@ function renderNodeDetail() {
     panel.appendChild(nRow);
   } else {
   addDetailLabel(panel, 'if');
-  const pred = document.createElement('div');
-  pred.className = 'lg-pred-row';
-  const left = document.createElement('select');
-  left.className = 'lg-detail-line';
-  left.innerHTML = '<option value="">state key</option>' + stateVarNames().map(k =>
-    '<option value="' + escapeHtml(k) + '"' + (n.detail.predLeft === k ? ' selected' : '') + '>' + escapeHtml(k) + '</option>'
-  ).join('');
-  if (n.detail.predLeft && !stateVarNames().includes(n.detail.predLeft)) {
-    const dead = document.createElement('option');
-    dead.value = n.detail.predLeft; dead.textContent = n.detail.predLeft + ' (missing)'; dead.selected = true;
-    left.appendChild(dead);
-  }
-  left.addEventListener('change', () => {
-    n.detail.predLeft = left.value;
+  const hint = document.createElement('div');
+  hint.className = 'lg-detail-hint';
+  hint.textContent = 'This conditional is the router. One check, or AND / OR several (including is empty).';
+  panel.appendChild(hint);
+  if (!Array.isArray(n.detail.predExtra)) n.detail.predExtra = [];
+  const box = document.createElement('div');
+  box.className = 'lg-pred-block';
+  const onMutate = () => {
     syncPredicateCondition(n);
     renderNodes();
+  };
+  appendPredicateClauseRow(box, n, firstClauseLive(n.detail), onMutate, false);
+  n.detail.predExtra.forEach((c) => {
+    appendPredicateClauseRow(box, n, c, onMutate, true);
   });
-  const op = document.createElement('select');
-  op.className = 'lg-detail-line';
-  [['>=', '>='], ['<=', '<='], ['>', '>'], ['<', '<'], ['==', '=='], ['!=', '!='], ['truthy', 'is truthy'], ['empty', 'is empty']].forEach(([val, lab]) => {
-    const o = document.createElement('option');
-    o.value = val; o.textContent = lab;
-    if ((n.detail.predOp || '>=') === val) o.selected = true;
-    op.appendChild(o);
-  });
-  op.addEventListener('change', () => {
-    n.detail.predOp = op.value;
-    syncPredicateCondition(n);
-    renderNodeDetail();
-  });
-  pred.appendChild(left);
-  pred.appendChild(op);
-  const needsRight = n.detail.predOp !== 'truthy' && n.detail.predOp !== 'empty';
-  if (needsRight) {
-    const mode = document.createElement('select');
-    mode.className = 'lg-detail-line';
-    mode.innerHTML =
-      '<option value="key"' + (n.detail.predRightMode !== 'literal' ? ' selected' : '') + '>other key</option>' +
-      '<option value="literal"' + (n.detail.predRightMode === 'literal' ? ' selected' : '') + '>literal</option>';
-    mode.addEventListener('change', () => {
-      n.detail.predRightMode = mode.value;
-      syncPredicateCondition(n);
+  if (n.detail.predExtra.length) {
+    const joinRow = document.createElement('div');
+    joinRow.className = 'lg-pred-join';
+    const join = document.createElement('select');
+    join.className = 'lg-detail-line';
+    join.innerHTML =
+      '<option value="and"' + (n.detail.predJoin !== 'or' ? ' selected' : '') + '>match all (AND)</option>' +
+      '<option value="or"' + (n.detail.predJoin === 'or' ? ' selected' : '') + '>match any (OR)</option>';
+    join.addEventListener('change', () => {
+      n.detail.predJoin = join.value;
+      onMutate();
       renderNodeDetail();
     });
-    pred.appendChild(mode);
-    if (n.detail.predRightMode === 'literal') {
-      const lit = document.createElement('input');
-      lit.className = 'lg-detail-line';
-      lit.placeholder = '3';
-      lit.value = n.detail.predRight || '';
-      lit.addEventListener('input', () => {
-        n.detail.predRight = lit.value;
-        syncPredicateCondition(n);
-      });
-      pred.appendChild(lit);
-    } else {
-      const right = document.createElement('select');
-      right.className = 'lg-detail-line';
-      right.innerHTML = '<option value="">state key</option>' + stateVarNames().map(k =>
-        '<option value="' + escapeHtml(k) + '"' + (n.detail.predRight === k ? ' selected' : '') + '>' + escapeHtml(k) + '</option>'
-      ).join('');
-      right.addEventListener('change', () => {
-        n.detail.predRight = right.value;
-        syncPredicateCondition(n);
-        renderNodes();
-      });
-      pred.appendChild(right);
-    }
+    joinRow.appendChild(join);
+    box.appendChild(joinRow);
   }
-  panel.appendChild(pred);
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'lg-pred-add';
+  add.textContent = n.detail.predExtra.length ? '+ another check' : '+ AND another check';
+  add.addEventListener('click', () => {
+    if (!Array.isArray(n.detail.predExtra)) n.detail.predExtra = [];
+    n.detail.predExtra.push({ left: '', op: 'empty', rightMode: 'literal', right: '' });
+    if (!n.detail.predJoin) n.detail.predJoin = 'and';
+    onMutate();
+    renderNodeDetail();
+  });
+  box.appendChild(add);
+  panel.appendChild(box);
   const preview = document.createElement('div');
   preview.className = 'lg-detail-hint';
   preview.textContent = 'return branch if ' + (formatPredicate(n.detail) || '…');
@@ -4206,7 +4397,6 @@ function renderNodeDetail() {
   }
 
   addDetailLabel(panel, 'then return');
-  panel.appendChild(bLabel);
   n.detail.branches.forEach((b, i) => {
     const row = document.createElement('div');
     row.className = 'lg-branch-row';
@@ -6781,13 +6971,14 @@ function buildLocalSkeletonCode() {
       code += '    return "' + (contE ? branchKey(contE, outs.indexOf(contE)) : 'END') + '"\n\n\n';
       return;
     }
-    code += '    # ' + (n.label ? 'decide based on: ' + n.label : 'decide the next route based on the state') + '\n';
-    outs.forEach((e, i) => {
-      const cond = i === 0 ? 'if' : 'elif';
-      code += '    ' + cond + ' ...:\n';
-      code += '        return "' + branchKey(e, i) + '"\n';
-    });
-    code += '    return "' + (outs[0] ? branchKey(outs[0], 0) : 'END') + '"\n\n\n';
+    const expr = pythonPredicateExpr(n.detail);
+    const siIdx = outs.findIndex(e => /^(si|yes|end|enough|stop|true|ok)$/i.test(String(e.label || '').trim()));
+    const noIdx = outs.findIndex(e => /^(no|continue|retry|loop|false|generate)$/i.test(String(e.label || '').trim()));
+    const stopE = siIdx >= 0 ? outs[siIdx] : outs[0];
+    const contE = noIdx >= 0 ? outs[noIdx] : (outs[1] || outs[0]);
+    code += '    if ' + expr + ':\n';
+    code += '        return "' + (stopE ? branchKey(stopE, outs.indexOf(stopE)) : 'END') + '"\n';
+    code += '    return "' + (contE ? branchKey(contE, outs.indexOf(contE)) : 'END') + '"\n\n\n';
   });
 
   code += 'builder = StateGraph(State)\n';
@@ -7261,10 +7452,20 @@ function compactGraphForCoach() {
         } else {
           row.if = {
             left: d.predLeft || '',
-            op: d.predOp || '>=',
+            op: d.predOp || 'empty',
             compare: d.predRightMode === 'literal' ? 'literal' : 'other key',
             right: d.predRight || '',
+            join: d.predJoin === 'or' ? 'or' : 'and',
+            also: Array.isArray(d.predExtra)
+              ? d.predExtra.filter(c => c && c.left).map(c => ({
+                  left: c.left,
+                  op: c.op || 'empty',
+                  compare: c.rightMode === 'literal' ? 'literal' : 'other key',
+                  right: c.right || '',
+                }))
+              : [],
           };
+          row.when = formatPredicate(d);
         }
       }
       return row;
