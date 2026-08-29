@@ -4011,7 +4011,7 @@ function renderNodeDetail() {
   if (n.type === 'join') {
     const hint = document.createElement('div');
     hint.className = 'lg-detail-hint';
-    hint.textContent = 'A barrier, not a branch. Incoming reports wait here. The next node (supervisor) runs only when every listed key is present.';
+    hint.textContent = 'A barrier, not a branch. Incoming writes wait here. The next node runs only when every listed key is present.';
     panel.appendChild(hint);
     addDetailLabel(panel, 'wait until present');
     const row = document.createElement('div');
