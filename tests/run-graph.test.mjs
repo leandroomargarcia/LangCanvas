@@ -638,4 +638,68 @@ function isEmptyish(v) {
   return v == null || v === '';
 }
 
+function joinRouterAlternateEntriesGraph() {
+  return {
+    version: 2,
+    stateVars: [
+      { key: 'ncm_info', val: '', type: 'str' },
+      { key: 'hab_info', val: '', type: 'str' },
+      { key: 'generation_ok', val: 'true', type: 'bool' },
+    ],
+    nodes: [
+      { id: 'start', type: 'start', label: 'start' },
+      {
+        id: 'clf',
+        type: 'action',
+        label: 'clasificador_ncm',
+        detail: { kind: 'function', writes: [{ key: 'ncm_info', op: 'set', expr: '"ncm-ok"' }] },
+      },
+      {
+        id: 'grounded',
+        type: 'router',
+        label: 'grounded?',
+        detail: { predLeft: 'generation_ok', predOp: 'truthy', stopMode: 'predicate' },
+      },
+      {
+        id: 'budget',
+        type: 'router',
+        label: 'budget spent?',
+        detail: { predLeft: 'generation_ok', predOp: 'empty', stopMode: 'predicate' },
+      },
+      {
+        id: 'hab',
+        type: 'action',
+        label: 'analista_habilitaciones',
+        detail: { kind: 'function', writes: [{ key: 'hab_info', op: 'set', expr: '"hab-ok"' }] },
+      },
+      {
+        id: 'gate',
+        type: 'join',
+        label: 'join',
+        detail: { waitKeys: ['ncm_info', 'hab_info'] },
+      },
+      { id: 'orch', type: 'action', label: 'orquestador', detail: { kind: 'function', writes: [] } },
+      { id: 'end', type: 'end', label: 'end' },
+    ],
+    edges: [
+      { id: 'e1', from: 'start', to: 'clf' },
+      { id: 'e2', from: 'clf', to: 'grounded' },
+      { id: 'e3', from: 'grounded', to: 'gate', label: 'yes' },
+      { id: 'e4', from: 'grounded', to: 'budget', label: 'no' },
+      { id: 'e5', from: 'budget', to: 'clf', label: 'no' },
+      { id: 'e6', from: 'budget', to: 'gate', label: 'yes' },
+      { id: 'e7', from: 'hab', to: 'gate' },
+      { id: 'e8', from: 'gate', to: 'orch' },
+      { id: 'e9', from: 'orch', to: 'end' },
+    ],
+  };
+}
+
+const altJoin = await runGraph(joinRouterAlternateEntriesGraph(), '');
+assert.equal(altJoin.error || '', '', altJoin.error);
+assert.ok(altJoin.trace.some(s => s.type === 'join' && s.status === 'released'), JSON.stringify(altJoin.trace.map(s => s.label + ':' + (s.status || s.type))));
+assert.ok(altJoin.trace.some(s => s.label === 'analista_habilitaciones'));
+assert.ok(altJoin.trace.some(s => s.label === 'orquestador'));
+assert.ok(!altJoin.trace.some(s => s.label === 'budget spent?'), 'must not re-enter the unused budget router');
+
 console.log('run-graph tests ok');
