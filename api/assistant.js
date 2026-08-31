@@ -4,36 +4,33 @@
 import { createHash } from 'node:crypto';
 import admin from 'firebase-admin';
 import { buildCoachPack, formatCoachUserMessage } from '../lib/coach-playbook.js';
-import { generateGeminiText } from '../lib/gemini.js';
+import { generateGeminiText, LITE_TIER_MODELS } from '../lib/gemini.js';
 import { isUnlimitedEmail } from '../lib/quota.js';
 
-export const config = { maxDuration: 30 };
+export const config = { maxDuration: 55 };
 
 const PLAN_LIMITS = { free: 5, pro: 50, guest: 5 };
 const GUEST_LIMIT = PLAN_LIMITS.guest;
-const MAX_QUESTION = 800;
-const MAX_GRAPH_CHARS = 8000;
-const MAX_OUTPUT_TOKENS = 1200;
+const MAX_QUESTION = 1200;
+const MAX_GRAPH_CHARS = 16000;
+const MAX_EXECUTION_CHARS = 8000;
+const MAX_OUTPUT_TOKENS = 2200;
 const COOLDOWN_MS = 3 * 1000;
 
-const SYSTEM_PROMPT = `You are a senior engineer tutoring on LangCanvas. The student is building ONE graph. You remember the chat: continue the same thread. Do not restart the curriculum, do not switch templates, do not ask them to delete their boxes unless a box truly contradicts GOAL.
+const SYSTEM_PROMPT = `You are the LangCanvas design partner. The student is building ONE graph for the job in GOAL (“problem to solve”). Your job is to turn that job into a working canvas: architecture (nodes, arrows, join vs conditional vs loop), shared state, schemas, and — when they have run it — debug from EXECUTION HISTORY.
 
-You do not invent the product. GOAL, CURRENT PHASE, CURRENT GAP, LANGCANVAS UI, FIELD GLOSSARY, and CURRENT CANVAS are the spec. Narrate them. Never tell them to type Python APIs on the canvas.
+You do not invent a different product. Do not convert their graph into Self-RAG / Reflexion / ReAct / a stock template unless they asked for that template. Keep their labels. Never tell them to type Python APIs on the canvas.
 
-CURRENT CANVAS JSON is a snapshot, not form field names. Speak visible labels: "stop when", "N", "if", "then return", "output schema", "runs when LLM returns", panel "execution".
+Speak visible UI: “problem to solve”, shared state, SCHEMAS, NODE DETAIL (“output schema”, “reads”, “writes”, “stop when”, “if”, “then return”, “runs when LLM returns”), + join, panel execution / history.
 
-Five phases — stay on CURRENT PHASE until that gap is done:
-1 diagram — complete THEIR graph (nodes, arrows, one-line effects) toward GOAL. If MODE=custom, this is their architecture (supervisor + workers, mixed RAG, whatever is on the canvas). Do not convert it to Self-RAG / Reflexion / ReAct.
-2 dictionary — SHARED STATE then SCHEMAS. For every variable: what it stores, which node writes it, which node reads it.
-3 configure — NODE DETAIL one node at a time (kind, schema, reads/writes, stop when). Explain why each field exists.
-4 review — debug vs GOAL. List what is wrong and how to fix it.
-5 run — panel execution: paste input, Dry run, then Run. Read history.
-
-Rules:
-- Answer QUESTION first, then the CURRENT GAP clicks. History is memory: if they already agreed on a design, keep it.
-- If they say next, teach CURRENT GAP only. 2–5 numbered canvas actions. Name THEIR real labels.
-- Match the student language. Spanish → **Por qué:** **Hacé esto:** **Después:** English → **Why:** **Do this:** **Then:**
-- No markdown fences. No full programs.`;
+How to think:
+1. Read GOAL. What enters, what the user should get, what must be true in between.
+2. Read CURRENT CANVAS. Does the wiring, state, and schemas actually implement GOAL? A schema is the contract of ONE LLM shot. Shared state is what arrows carry. A join waits for keys; a conditional chooses ONE branch.
+3. If EXECUTION HISTORY is present, treat it as ground truth of the last Dry run / Run. Explain why it stopped, which write never landed, which branch it took, and the canvas click that fixes it.
+4. Answer QUESTION first. Then give concrete canvas actions (their real node names). Spanish → **Por qué:** **Hacé esto:** **Después:** English → **Why:** **Do this:** **Then:**
+5. CHECKER HINTS are optional lint. Do not let them override GOAL, the student's question, or the execution trace.
+6. Chat history is the thread. Do not restart. No markdown fences. No full programs.
+If a PLAN JSON is provided, follow it unless it contradicts GOAL or EXECUTION HISTORY.`;
 
 const lastOkByUid = new Map();
 
@@ -221,6 +218,42 @@ async function ensureUserAndReserveQuota(decoded) {
   });
 }
 
+const PLAN_SYSTEM = `You are a silent planner for LangCanvas. Read GOAL, CURRENT CANVAS, EXECUTION HISTORY, and QUESTION. Output JSON only. Do not tutor. Do not invent a stock template. Use the student's node labels. At most 5 issues and 5 next_clicks.`;
+
+const PLAN_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    goal_in_one_line: { type: 'STRING' },
+    focus: { type: 'STRING' },
+    issues: { type: 'ARRAY', items: { type: 'STRING' } },
+    next_clicks: { type: 'ARRAY', items: { type: 'STRING' } },
+  },
+  required: ['focus', 'issues', 'next_clicks'],
+};
+
+async function planWithLite(specText) {
+  try {
+    const { data } = await generateGeminiText({
+      system: PLAN_SYSTEM,
+      contents: [{ role: 'user', parts: [{ text: String(specText || '').slice(0, 14000) }] }],
+      temperature: 0.1,
+      maxOutputTokens: 500,
+      asJson: true,
+      responseSchema: PLAN_SCHEMA,
+      models: LITE_TIER_MODELS,
+    });
+    if (!data || typeof data !== 'object') return null;
+    return {
+      goal_in_one_line: String(data.goal_in_one_line || '').slice(0, 240),
+      focus: String(data.focus || '').slice(0, 80),
+      issues: Array.isArray(data.issues) ? data.issues.map(String).slice(0, 5) : [],
+      next_clicks: Array.isArray(data.next_clicks) ? data.next_clicks.map(String).slice(0, 5) : [],
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
 async function callGemini(contents) {
   const { text } = await generateGeminiText({
     system: SYSTEM_PROMPT,
@@ -266,12 +299,14 @@ export default async function handler(req, res) {
   let question = '';
   let history = [];
   let graph = null;
+  let execution = null;
   let stickyPattern = '';
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
     question = body && body.question;
     if (Array.isArray(body && body.history)) history = body.history;
     if (body && body.graph && typeof body.graph === 'object') graph = body.graph;
+    if (body && body.execution && typeof body.execution === 'object') execution = body.execution;
     if (body && typeof body.pattern === 'string') stickyPattern = body.pattern.trim();
     else if (body && body.lesson && typeof body.lesson.pattern === 'string') stickyPattern = body.lesson.pattern.trim();
   } catch (_) {
@@ -296,7 +331,12 @@ export default async function handler(req, res) {
   }
 
   const graphText = JSON.stringify(graph || {}).slice(0, MAX_GRAPH_CHARS);
+  const executionText = execution
+    ? JSON.stringify(execution).slice(0, MAX_EXECUTION_CHARS)
+    : '';
   const pack = buildCoachPack(graph || {}, question, stickyPattern);
+  const specText = formatCoachUserMessage(pack, graphText, question, executionText);
+  const plan = await planWithLite(specText);
   const contents = [];
   history.slice(-24).forEach((m) => {
     if (!m || !m.text) return;
@@ -305,9 +345,13 @@ export default async function handler(req, res) {
       parts: [{ text: String(m.text).slice(0, 3500) }],
     });
   });
+  const planBlock = plan
+    ? '\n\nPLAN (from a smaller model — follow unless it contradicts GOAL or EXECUTION HISTORY):\n'
+      + JSON.stringify(plan)
+    : '';
   contents.push({
     role: 'user',
-    parts: [{ text: formatCoachUserMessage(pack, graphText, question) }],
+    parts: [{ text: specText + planBlock }],
   });
 
   try {

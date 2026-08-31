@@ -1584,6 +1584,7 @@ let visitCounts = {};
 let runLog = [];
 let runBusy = false;
 let lastRunLabels = new Set();
+let lastRunForCoach = null;
 let currentGraphId = null;
 let currentGraphStatus = 'draft';
 let graphDirty = false;
@@ -3212,6 +3213,42 @@ function setRunButtons(busy) {
   if (mock) mock.disabled = busy;
 }
 
+function compactRunForCoach(result) {
+  if (!result) return null;
+  const steps = (result.trace || []).slice(0, 40).map(s => {
+    const row = {
+      label: s.label,
+      type: s.type,
+      kind: s.kind || '',
+      note: (s.note || '').slice(0, 240),
+      branch: s.branch || '',
+    };
+    if (s.status) row.status = s.status;
+    if (s.waitKeys) row.waitKeys = s.waitKeys;
+    if (s.missing) row.missing = s.missing;
+    if (s.wrote) row.wroteKeys = Object.keys(s.wrote);
+    if (s.llm && s.llm.args) {
+      row.llmSchema = s.llm.schema || '';
+      row.llmKeys = Object.keys(s.llm.args);
+    }
+    if (s.tool) {
+      row.tool = s.tool.toolId || '';
+      row.queries = s.tool.queries;
+    }
+    return row;
+  });
+  return {
+    live: !!result.live,
+    error: result.error || '',
+    outputs: (result.outputs || []).slice(0, 12).map(o => ({
+      key: o.key,
+      field: o.field,
+      hasValue: o.value != null && o.value !== '',
+    })),
+    steps,
+  };
+}
+
 function prettyJson(v) {
   try { return JSON.stringify(v, null, 2); } catch (_) { return String(v); }
 }
@@ -3361,6 +3398,7 @@ async function startCanvasRun(live) {
   } catch (err) {
     result = { live: !!live, trace: [], outputs: [], error: err.message || 'Could not reach the run API.' };
   }
+  lastRunForCoach = compactRunForCoach(result);
   lastRunLabels = new Set((result.trace || []).map(s => s.label).filter(Boolean));
   const last = (result.trace || []).filter(s => s.type === 'action' || s.type === 'router' || s.type === 'join' || s.type === 'end').pop();
   if (last && last.label) {
@@ -7578,6 +7616,8 @@ function compactGraphForCoach() {
         if (d.kind === 'llm') {
           row.outputSchema = d.outputSchemaId ? (schemaName[d.outputSchemaId] || d.outputSchemaId) : '';
           row.bindTools = d.bindTools !== false;
+          row.system = String(d.system || '').slice(0, 400);
+          row.prompt = String(d.prompt || '').slice(0, 400);
         }
         if (d.kind === 'tool') {
           row.tool = d.tool || d.toolId || '';
@@ -7585,7 +7625,11 @@ function compactGraphForCoach() {
           row.handles = (d.handlesSchemaIds || []).map(id => schemaName[id] || id);
         }
         row.reads = d.reads || [];
-        row.writes = (d.writes || []).map(w => w.key + ':' + w.op);
+        row.writes = (d.writes || []).map(w => ({
+          key: w.key,
+          op: w.op,
+          expr: String(w.expr || '').slice(0, 120),
+        }));
       }
       if (n.type === 'router') {
         const toolRounds = d.stopMode === 'tool_rounds';
@@ -8464,7 +8508,7 @@ function detectLesson(g, question) {
 }
 
 function openingCoachMessage() {
-  return 'Five steps, one graph: (1) diagram the flow toward “problem to solve”, (2) shared state + schemas — what each key is for and who reads it, (3) configure each node, (4) review / debug, (5) run it in execution. I remember this chat (Clean wipes it). If this is your own architecture, I will not turn it into a stock template.';
+  return 'I read “problem to solve”, your graph (architecture, shared state, schemas), and the last execution history. I help you turn that job into a working flow — and debug a Dry run / Run from history. Tell me what the system should do.';
 }
 
 function seedAssistantChat() {
@@ -8606,6 +8650,7 @@ async function sendAssistant(ev) {
         question: question,
         history: history,
         graph: graph,
+        execution: lastRunForCoach,
         pattern: (lesson && lesson.pattern) || '',
         lesson: lesson,
       }),
