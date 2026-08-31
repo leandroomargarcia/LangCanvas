@@ -284,21 +284,42 @@ async function searchWikipedia(query) {
 }
 
 async function searchTavily(query) {
-  const key = process.env.TAVILY_API_KEY;
-  if (!key) return null;
+  const key = String(process.env.TAVILY_API_KEY || '').trim();
+  if (!key) {
+    return { ok: false, error: 'Tavily is not configured on the server (missing TAVILY_API_KEY).' };
+  }
   try {
     const res = await fetch('https://api.tavily.com/search', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ api_key: key, query, max_results: 3, search_depth: 'basic' }),
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + key,
+      },
+      body: JSON.stringify({
+        query,
+        max_results: 5,
+        search_depth: 'basic',
+      }),
     });
-    if (!res.ok) return null;
     const data = await readResponseJson(res);
-    if (!data) return null;
-    const rows = data.results || [];
-    return rows.map(r => (r.title ? r.title + ': ' : '') + (r.content || r.snippet || '')).join('\n').slice(0, 1200);
-  } catch (_) {
-    return null;
+    if (!res.ok) {
+      const msg = (data && (data.detail || data.error || data.message)) || ('HTTP ' + res.status);
+      return { ok: false, error: 'Tavily error: ' + String(msg).slice(0, 180) };
+    }
+    const rows = (data && data.results) || [];
+    const bits = rows.map((r) => {
+      const title = r && r.title ? String(r.title) + ': ' : '';
+      const body = (r && (r.content || r.snippet)) || '';
+      const url = r && r.url ? ' (' + r.url + ')' : '';
+      return (title + body + url).trim();
+    }).filter(Boolean);
+    const answer = data && data.answer ? String(data.answer).trim() : '';
+    if (answer) bits.unshift(answer);
+    const snippet = bits.join('\n').slice(0, 2000);
+    if (!snippet) return { ok: true, empty: true, snippet: '' };
+    return { ok: true, snippet };
+  } catch (err) {
+    return { ok: false, error: 'Tavily request failed.' };
   }
 }
 
@@ -315,12 +336,15 @@ async function liveTool({ toolId, queries }) {
       snippet = (await searchWikipedia(q)) || (await searchDuckDuckGo(q));
     } else if (toolId === 'tavily') {
       const tv = await searchTavily(q);
-      if (tv) {
-        snippet = tv;
+      if (tv && tv.ok && tv.snippet) {
+        snippet = tv.snippet;
         source = 'tavily';
+      } else if (tv && tv.ok) {
+        snippet = 'Tavily returned no results for this query.';
+        source = 'tavily-empty';
       } else {
-        snippet = (await searchDuckDuckGo(q)) || (await searchWikipedia(q));
-        source = snippet ? 'duckduckgo-fallback' : 'empty';
+        snippet = (tv && tv.error) || 'Tavily search failed.';
+        source = 'tavily-error';
       }
     } else {
       snippet = (await searchDuckDuckGo(q)) || (await searchWikipedia(q));
