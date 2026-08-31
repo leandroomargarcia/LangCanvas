@@ -882,6 +882,7 @@
   }
   .lg-lib-head h1 span { color: var(--accent); }
   .lg-lib-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .lg-lib-tabs { display: flex; align-items: center; gap: 6px; }
   .lg-lib-grid {
     position: relative; z-index: 2;
     display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -896,6 +897,8 @@
   }
   .lg-lib-card { cursor: pointer; width: 100%; font-family: inherit; color: inherit; }
   .lg-lib-card:hover, .lg-lib-new:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .lg-lib-card.is-trash { cursor: default; background: rgba(255,255,255,0.62); }
+  .lg-lib-card.is-trash:hover { transform: none; border-color: rgba(184,75,62,0.35); }
   .lg-lib-card h2 {
     font-family: "Fraunces", Georgia, serif; font-size: 18px; font-weight: 700;
     letter-spacing: -0.03em; margin: 0 0 6px; line-height: 1.25;
@@ -917,6 +920,10 @@
     text-transform: uppercase; color: var(--accent);
     border: 1px solid rgba(108,92,224,0.35); border-radius: 999px;
     padding: 1px 7px; margin-left: 6px; vertical-align: middle;
+  }
+  .lg-lib-badge.trash {
+    color: #B84B3E;
+    border-color: rgba(184,75,62,0.4);
   }
   @media (max-width: 640px) {
     #graph-library { padding: 20px 16px 40px; }
@@ -970,10 +977,14 @@
   <div class="lg-lib-head">
     <div class="lg-brand">
       <img class="lg-logo" src="./logo.png" width="32" height="32" alt="" />
-      <h1>Your <span>designs</span></h1>
+      <h1 id="lib-heading">Your <span>designs</span></h1>
     </div>
     <div class="lg-lib-actions">
-      <button type="button" class="lg-btn primary" onclick="createNewDesign()">New design</button>
+      <div class="lg-lib-tabs" role="tablist" aria-label="Design library">
+        <button type="button" class="lg-btn active" id="lib-tab-designs" role="tab" aria-selected="true" onclick="showLibraryDesigns()">Designs</button>
+        <button type="button" class="lg-btn" id="lib-tab-trash" role="tab" aria-selected="false" onclick="showLibraryTrash()">Trash</button>
+      </div>
+      <button type="button" class="lg-btn primary" id="lib-new-btn" onclick="createNewDesign()">New design</button>
       <div class="lg-menu align-right" id="lib-user-menu">
         <button type="button" class="lg-user-chip" id="lib-user-chip" onclick="toggleMenu('lib-user-menu', event)">
           <span class="lg-avatar" id="lib-user-avatar-fallback" aria-hidden="true">L</span>
@@ -1203,7 +1214,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js';
 import {
   getFirestore, doc, getDoc, setDoc, collection, addDoc, updateDoc, deleteDoc,
-  getDocs, serverTimestamp,
+  getDocs, serverTimestamp, deleteField,
 } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 
 const cfg = window.LANGCANVAS_FIREBASE || {};
@@ -1481,7 +1492,7 @@ if (!configured) {
   }
   window.lcGraphs = {
     uid() { return (auth && auth.currentUser) ? auth.currentUser.uid : null; },
-    async list() {
+    async listAll() {
       const col = graphsCol();
       if (!col) return [];
       const snap = await Promise.race([
@@ -1495,6 +1506,20 @@ if (!configured) {
         return tb - ta;
       });
       return rows;
+    },
+    async list() {
+      const rows = await this.listAll();
+      return rows.filter((r) => !r.deletedAt);
+    },
+    async listTrash() {
+      const rows = await this.listAll();
+      const trash = rows.filter((r) => r.deletedAt);
+      trash.sort((a, b) => {
+        const ta = a.deletedAt && a.deletedAt.toMillis ? a.deletedAt.toMillis() : 0;
+        const tb = b.deletedAt && b.deletedAt.toMillis ? b.deletedAt.toMillis() : 0;
+        return tb - ta;
+      });
+      return trash;
     },
     async get(id) {
       const ref = graphDoc(id);
@@ -1525,6 +1550,16 @@ if (!configured) {
         graph: payload.graph || {},
         updatedAt: serverTimestamp(),
       });
+    },
+    async trash(id) {
+      const ref = graphDoc(id);
+      if (!ref) throw new Error('Sign in required.');
+      await updateDoc(ref, { deletedAt: serverTimestamp() });
+    },
+    async restore(id) {
+      const ref = graphDoc(id);
+      if (!ref) throw new Error('Sign in required.');
+      await updateDoc(ref, { deletedAt: deleteField() });
     },
     async remove(id) {
       const ref = graphDoc(id);
@@ -1586,6 +1621,7 @@ let runBusy = false;
 let lastRunLabels = new Set();
 let lastRunForCoach = null;
 let currentGraphId = null;
+let libraryView = 'designs';
 let currentGraphStatus = 'draft';
 let graphDirty = false;
 let graphHydrating = false;
@@ -6169,9 +6205,10 @@ async function openDesign(id) {
   if (!api) return;
   await flushGraphSave();
   const row = await api.get(id);
-  if (!row) {
+  if (!row || row.deletedAt) {
     rememberOpenGraph(null);
     currentGraphId = null;
+    libraryView = row && row.deletedAt ? 'trash' : 'designs';
     await renderGraphLibrary();
     return;
   }
@@ -6215,8 +6252,57 @@ async function deleteDesign(id, ev) {
     currentGraphId = null;
     rememberOpenGraph(null);
   }
+  await api.trash(id);
+  await renderGraphLibrary();
+}
+
+async function restoreDesign(id, ev) {
+  if (ev) ev.stopPropagation();
+  const api = graphsApi();
+  if (!api) return;
+  await api.restore(id);
+  await renderGraphLibrary();
+}
+
+async function destroyDesign(id, ev) {
+  if (ev) ev.stopPropagation();
+  const api = graphsApi();
+  if (!api) return;
+  const ok = window.confirm('Delete this design forever? This cannot be undone.');
+  if (!ok) return;
+  if (id === currentGraphId) {
+    graphDirty = false;
+    if (graphSaveTimer) { clearTimeout(graphSaveTimer); graphSaveTimer = null; }
+    currentGraphId = null;
+    rememberOpenGraph(null);
+  }
   await api.remove(id);
   await renderGraphLibrary();
+}
+
+function setLibraryView(view) {
+  libraryView = view === 'trash' ? 'trash' : 'designs';
+  const heading = document.getElementById('lib-heading');
+  const tabDesigns = document.getElementById('lib-tab-designs');
+  const tabTrash = document.getElementById('lib-tab-trash');
+  const newBtn = document.getElementById('lib-new-btn');
+  const inTrash = libraryView === 'trash';
+  if (heading) heading.innerHTML = inTrash ? 'Trash' : 'Your <span>designs</span>';
+  if (tabDesigns) {
+    tabDesigns.classList.toggle('active', !inTrash);
+    tabDesigns.setAttribute('aria-selected', inTrash ? 'false' : 'true');
+  }
+  if (tabTrash) {
+    tabTrash.classList.toggle('active', inTrash);
+    tabTrash.setAttribute('aria-selected', inTrash ? 'true' : 'false');
+  }
+  if (newBtn) newBtn.hidden = inTrash;
+}
+
+function paintTrashTab(count) {
+  const tab = document.getElementById('lib-tab-trash');
+  if (!tab) return;
+  tab.textContent = count ? ('Trash · ' + count) : 'Trash';
 }
 
 function relativeTime(ts) {
@@ -6238,6 +6324,7 @@ function relativeTime(ts) {
 
 async function renderGraphLibrary() {
   showLibraryShell();
+  setLibraryView(libraryView);
   const grid = document.getElementById('graph-library-grid');
   if (!grid) return;
   grid.innerHTML = '<p class="lg-lib-empty">Loading designs…</p>';
@@ -6247,22 +6334,60 @@ async function renderGraphLibrary() {
     return;
   }
   try {
-    const rows = await api.list();
+    const all = await api.listAll();
+    const live = all.filter((r) => !r.deletedAt);
+    const trash = all.filter((r) => r.deletedAt).sort((a, b) => {
+      const ta = a.deletedAt && a.deletedAt.toMillis ? a.deletedAt.toMillis() : 0;
+      const tb = b.deletedAt && b.deletedAt.toMillis ? b.deletedAt.toMillis() : 0;
+      return tb - ta;
+    });
+    paintTrashTab(trash.length);
     grid.innerHTML = '';
+    if (libraryView === 'trash') {
+      if (!trash.length) {
+        const empty = document.createElement('p');
+        empty.className = 'lg-lib-empty';
+        empty.textContent = 'Trash is empty. Deleted designs wait here until you restore them or delete them forever.';
+        grid.appendChild(empty);
+        return;
+      }
+      trash.forEach((row) => {
+        const card = document.createElement('div');
+        card.className = 'lg-lib-card is-trash';
+        const nodesN = row.nodeCount || ((row.graph && row.graph.nodes && row.graph.nodes.length) || 1);
+        card.innerHTML =
+          '<h2></h2>' +
+          '<p class="lg-lib-meta"></p>' +
+          '<div class="lg-lib-card-actions">' +
+            '<button type="button" class="lg-btn primary restore-btn">Restore</button>' +
+            '<button type="button" class="lg-btn warn destroy-btn">Delete forever</button>' +
+          '</div>';
+        card.querySelector('h2').textContent = row.title || 'Untitled draft';
+        card.querySelector('h2').insertAdjacentHTML('beforeend', '<span class="lg-lib-badge trash">trash</span>');
+        card.querySelector('.lg-lib-meta').textContent =
+          nodesN + (nodesN === 1 ? ' node' : ' nodes') + ' · deleted ' + relativeTime(row.deletedAt);
+        card.querySelector('.restore-btn').addEventListener('click', (ev) => restoreDesign(row.id, ev));
+        card.querySelector('.destroy-btn').addEventListener('click', (ev) => destroyDesign(row.id, ev));
+        grid.appendChild(card);
+      });
+      return;
+    }
     const neu = document.createElement('button');
     neu.type = 'button';
     neu.className = 'lg-lib-new';
     neu.onclick = () => createNewDesign();
     neu.innerHTML = '<strong>+ New design</strong><span>Empty canvas. Saves as a draft while you work.</span>';
     grid.appendChild(neu);
-    if (!rows.length) {
+    if (!live.length) {
       const empty = document.createElement('p');
       empty.className = 'lg-lib-empty';
-      empty.textContent = 'Nothing here yet. Create a design and it will show up even if you leave it half-finished.';
+      empty.textContent = trash.length
+        ? 'No active designs. Restore one from Trash, or create a new canvas.'
+        : 'Nothing here yet. Create a design and it will show up even if you leave it half-finished.';
       grid.appendChild(empty);
       return;
     }
-    rows.forEach(row => {
+    live.forEach((row) => {
       const card = document.createElement('div');
       card.className = 'lg-lib-card';
       const nodesN = row.nodeCount || ((row.graph && row.graph.nodes && row.graph.nodes.length) || 1);
@@ -6292,15 +6417,27 @@ async function renderGraphLibrary() {
   }
 }
 
+function showLibraryDesigns() {
+  libraryView = 'designs';
+  renderGraphLibrary();
+}
+
+function showLibraryTrash() {
+  libraryView = 'trash';
+  renderGraphLibrary();
+}
+
 async function showGraphLibrary() {
   await flushGraphSave();
   persistAssistantChat();
   rememberOpenGraph(null);
   currentGraphId = null;
+  libraryView = 'designs';
   await renderGraphLibrary();
 }
 
 window.onLangCanvasSignedIn = async function onLangCanvasSignedIn() {
+  libraryView = 'designs';
   showLibraryShell();
   await renderGraphLibrary();
 };

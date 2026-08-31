@@ -15,6 +15,7 @@ service cloud.firestore {
       allow delete: if false;
 
       // Signed-in users persist their own canvas designs (drafts + named).
+      // Soft-delete uses deletedAt; hard delete removes the document.
       match /graphs/{graphId} {
         allow read, create, update, delete: if request.auth != null
           && request.auth.uid == uid;
