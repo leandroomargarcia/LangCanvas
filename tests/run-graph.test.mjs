@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { runGraph, flattenSchemaFields, interpolatePrompt, defaultMockAdapters, evalWriteExpr, retrieveDemoDocs, evalPredicate, formatPredicate } from '../lib/run-graph.js';
+import { runGraph, flattenSchemaFields, interpolatePrompt, defaultMockAdapters, evalWriteExpr, retrieveDemoDocs, evalPredicate, formatPredicate, initRunState } from '../lib/run-graph.js';
 
 function reflexionGraph() {
   return {
@@ -701,5 +701,27 @@ assert.ok(altJoin.trace.some(s => s.type === 'join' && s.status === 'released'),
 assert.ok(altJoin.trace.some(s => s.label === 'analista_habilitaciones'));
 assert.ok(altJoin.trace.some(s => s.label === 'orquestador'));
 assert.ok(!altJoin.trace.some(s => s.label === 'budget spent?'), 'must not re-enter the unused budget router');
+
+const floatState = initRunState({
+  stateVars: [
+    { key: 'precio_ref', val: '12.5', type: 'float' },
+    { key: 'attempts', val: '2', type: 'int' },
+  ],
+}, '');
+assert.equal(floatState.precio_ref, 12.5);
+assert.equal(typeof floatState.precio_ref, 'number');
+assert.equal(floatState.attempts, 2);
+assert.equal(evalPredicate({ precio_ref: 12.5 }, {
+  predLeft: 'precio_ref',
+  predOp: '>',
+  predRightMode: 'literal',
+  predRight: '12.4',
+}), true);
+assert.equal(evalPredicate({ precio_ref: 12.5 }, {
+  predLeft: 'precio_ref',
+  predOp: '<',
+  predRightMode: 'literal',
+  predRight: '12.4',
+}), false);
 
 console.log('run-graph tests ok');

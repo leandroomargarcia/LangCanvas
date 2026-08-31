@@ -2697,7 +2697,7 @@ function toggleMode(m) {
   renderNodes();
 }
 
-const STATE_TYPES = ['str', 'int', 'bool', 'list', 'messages'];
+const STATE_TYPES = ['str', 'int', 'float', 'bool', 'list', 'messages'];
 const FIELD_PRIMITIVES = ['str', 'int', 'float', 'bool', 'list[str]', 'list'];
 
 function inferStateType(key) {
@@ -2725,11 +2725,12 @@ function renderState() {
   list.innerHTML = '';
   stateVars.forEach((row, i) => {
     if (!row.type) row.type = inferStateType(row.key);
+    const types = STATE_TYPES.indexOf(row.type) >= 0 ? STATE_TYPES : STATE_TYPES.concat([row.type]);
     const div = document.createElement('div');
     div.className = 'lg-state-row';
     div.innerHTML =
       '<input class="k" placeholder="variable" value="' + escapeHtml(row.key) + '">' +
-      '<select class="t">' + STATE_TYPES.map(t =>
+      '<select class="t">' + types.map(t =>
         '<option value="' + t + '"' + (row.type === t ? ' selected' : '') + '>' + t + '</option>'
       ).join('') + '</select>' +
       '<input class="v" placeholder="value" value="' + escapeHtml(row.val) + '">' +
@@ -7091,7 +7092,11 @@ function buildLocalSkeletonCode() {
     stateKeys.forEach(k => {
       const row = stateVars.find(v => v.key === k);
       const t = (row && row.type) || inferStateType(k);
-      const py = t === 'int' ? 'int' : t === 'bool' ? 'bool' : t === 'list' || t === 'messages' ? 'list' : 'str';
+      const py = t === 'int' ? 'int'
+        : t === 'float' ? 'float'
+        : t === 'bool' ? 'bool'
+        : t === 'list' || t === 'list[str]' || t === 'messages' ? 'list'
+        : 'str';
       code += '    ' + pyName(k, k) + ': ' + py + '\n';
     });
   } else code += '    pass\n';
@@ -8508,7 +8513,7 @@ function detectLesson(g, question) {
 }
 
 function openingCoachMessage() {
-  return 'I read “problem to solve”, your graph (architecture, shared state, schemas), and the last execution history. I help you turn that job into a working flow — and debug a Dry run / Run from history. Tell me what the system should do.';
+  return 'I read “problem to solve”, your current graph, and the last execution history. I keep your architecture (nodes, join, loops) and help you fill state, schemas, writes, and debug a Dry run / Run. I will not redraw the flow unless you ask. Tell me what is stuck.';
 }
 
 function seedAssistantChat() {

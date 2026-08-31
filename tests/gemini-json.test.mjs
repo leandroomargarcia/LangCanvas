@@ -13,6 +13,7 @@ assert.deepEqual(JSON.parse(closed), { answer: 'hello' });
 
 const schema = fieldsToGeminiSchema([
   { key: 'answer', type: 'str' },
+  { key: 'costo_total', type: 'float' },
   { key: 'search_queries', type: 'list[str]' },
   {
     key: 'reflection',
@@ -25,6 +26,7 @@ const schema = fieldsToGeminiSchema([
 ]);
 assert.equal(schema.type, 'OBJECT');
 assert.equal(schema.properties.answer.type, 'STRING');
+assert.equal(schema.properties.costo_total.type, 'NUMBER');
 assert.equal(schema.properties.search_queries.type, 'ARRAY');
 assert.equal(schema.properties.reflection.type, 'OBJECT');
 assert.equal(schema.properties.reflection.properties.missing.type, 'STRING');

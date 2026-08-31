@@ -3,7 +3,7 @@
 
 import { createHash } from 'node:crypto';
 import admin from 'firebase-admin';
-import { buildCoachPack, formatCoachUserMessage } from '../lib/coach-playbook.js';
+import { buildCoachPack, formatCoachUserMessage, sanitizeCoachPlan } from '../lib/coach-playbook.js';
 import { generateGeminiText, LITE_TIER_MODELS } from '../lib/gemini.js';
 import { isUnlimitedEmail } from '../lib/quota.js';
 
@@ -17,20 +17,25 @@ const MAX_EXECUTION_CHARS = 8000;
 const MAX_OUTPUT_TOKENS = 2200;
 const COOLDOWN_MS = 3 * 1000;
 
-const SYSTEM_PROMPT = `You are the LangCanvas design partner. The student is building ONE graph for the job in GOAL (“problem to solve”). Your job is to turn that job into a working canvas: architecture (nodes, arrows, join vs conditional vs loop), shared state, schemas, and — when they have run it — debug from EXECUTION HISTORY.
+const SYSTEM_PROMPT = `You are the LangCanvas design partner. The student is building ONE graph for the job in GOAL (“problem to solve”). Help that canvas work: shared state, schemas, reads/writes, predicates — and, when they have run it, debug EXECUTION HISTORY.
 
 You do not invent a different product. Do not convert their graph into Self-RAG / Reflexion / ReAct / a stock template unless they asked for that template. Keep their labels. Never tell them to type Python APIs on the canvas.
 
 Speak visible UI: “problem to solve”, shared state, SCHEMAS, NODE DETAIL (“output schema”, “reads”, “writes”, “stop when”, “if”, “then return”, “runs when LLM returns”), + join, panel execution / history.
 
+LangCanvas facts (never contradict these):
+- bind_tools + tool_choice = structured output to that LLM’s output schema. It does NOT attach Tavily, calculate_cost, or any catalog tool.
+- Catalog tools run only as kind=tool action nodes (arrows). An LLM that “needs to search” writes search_queries; a conditional (e.g. reporte_ok?) routes to the tool node; the tool writes state; arrows return to the SAME LLM. Do not split that LLM into orquestador_inicial / orquestador_final.
+- A join waits for keys from specialists that finish at different times. Do not delete it so two LLM reports can race. Do not make the join wait for later tool outputs unless the student asks.
+
 How to think:
-1. Read GOAL. What enters, what the user should get, what must be true in between.
-2. Read CURRENT CANVAS. Does the wiring, state, and schemas actually implement GOAL? A schema is the contract of ONE LLM shot. Shared state is what arrows carry. A join waits for keys; a conditional chooses ONE branch.
+1. Read DESIGN LOCK, then GOAL. The lock is the architecture. Chat history refusals (“no separes”, “el join es necesario”, “no cambies tanto”) are also locks.
+2. Read CURRENT CANVAS. Does state/schemas/writes implement GOAL on THAT wiring? A schema is the contract of ONE LLM shot. Shared state is what arrows carry. A join waits for keys; a conditional chooses ONE branch.
 3. If EXECUTION HISTORY is present, treat it as ground truth of the last Dry run / Run. Explain why it stopped, which write never landed, which branch it took, and the canvas click that fixes it.
-4. Answer QUESTION first. Then give concrete canvas actions (their real node names). Spanish → **Por qué:** **Hacé esto:** **Después:** English → **Why:** **Do this:** **Then:**
-5. CHECKER HINTS are optional lint. Do not let them override GOAL, the student's question, or the execution trace.
-6. Chat history is the thread. Do not restart. No markdown fences. No full programs.
-If a PLAN JSON is provided, follow it unless it contradicts GOAL or EXECUTION HISTORY.`;
+4. Answer QUESTION first. Then give concrete canvas actions (their real node names). If DESIGN LOCK is active, those actions are NODE DETAIL / shared state / SCHEMAS — not a new graph. Spanish → **Por qué:** **Hacé esto:** **Después:** English → **Why:** **Do this:** **Then:**
+5. CHECKER HINTS are optional lint. Ignore any hint that deletes nodes, splits an LLM, linearizes a loop, or puts tools inside bind_tools.
+6. Chat history is the thread. Do not restart. Do not propose a different topology than the previous assistant turn unless QUESTION asked to rewire. No markdown fences. No full programs.
+If a PLAN JSON is provided, follow it ONLY if it agrees with DESIGN LOCK, GOAL, student refusals in chat, and EXECUTION HISTORY. If PLAN wants a different topology, discard PLAN and fill the existing canvas.`;
 
 const lastOkByUid = new Map();
 
@@ -218,7 +223,13 @@ async function ensureUserAndReserveQuota(decoded) {
   });
 }
 
-const PLAN_SYSTEM = `You are a silent planner for LangCanvas. Read GOAL, CURRENT CANVAS, EXECUTION HISTORY, and QUESTION. Output JSON only. Do not tutor. Do not invent a stock template. Use the student's node labels. At most 5 issues and 5 next_clicks.`;
+const PLAN_SYSTEM = `You are a silent planner for LangCanvas. Read DESIGN LOCK, GOAL, CURRENT CANVAS, EXECUTION HISTORY, and QUESTION. Output JSON only. Do not tutor. Do not invent a stock template. Use the student's node labels. At most 5 issues and 5 next_clicks.
+
+If DESIGN LOCK says the topology is locked (or QUESTION is only a greeting / “review my graph” / “y ahora?”):
+- focus must be one of: state, schema, writes, reads, prompt, predicate, wait_keys, debug, greeting
+- issues and next_clicks may ONLY mention shared state, schema fields, reads, writes, exprs, prompts, predicates, wait-until keys, or execution debug on EXISTING nodes
+- FORBIDDEN: add/remove/rename nodes, delete join, split an LLM, put Tavily inside bind_tools, linearize a loop, delete a conditional, move tools before the orchestrator as a new architecture
+LangCanvas: bind_tools = output schema, not catalog tools.`;
 
 const PLAN_SCHEMA = {
   type: 'OBJECT',
@@ -258,7 +269,7 @@ async function callGemini(contents) {
   const { text } = await generateGeminiText({
     system: SYSTEM_PROMPT,
     contents,
-    temperature: 0.4,
+    temperature: 0.2,
     maxOutputTokens: MAX_OUTPUT_TOKENS,
   });
   return text;
@@ -334,9 +345,11 @@ export default async function handler(req, res) {
   const executionText = execution
     ? JSON.stringify(execution).slice(0, MAX_EXECUTION_CHARS)
     : '';
-  const pack = buildCoachPack(graph || {}, question, stickyPattern);
+  const pack = buildCoachPack(graph || {}, question, stickyPattern, history);
   const specText = formatCoachUserMessage(pack, graphText, question, executionText);
-  const plan = await planWithLite(specText);
+  const rawPlan = await planWithLite(specText);
+  const topologyLocked = !!(pack.lock && pack.lock.topologyLocked);
+  const plan = sanitizeCoachPlan(rawPlan, topologyLocked);
   const contents = [];
   history.slice(-24).forEach((m) => {
     if (!m || !m.text) return;
@@ -346,7 +359,7 @@ export default async function handler(req, res) {
     });
   });
   const planBlock = plan
-    ? '\n\nPLAN (from a smaller model — follow unless it contradicts GOAL or EXECUTION HISTORY):\n'
+    ? '\n\nPLAN (from a smaller model — follow ONLY if it agrees with DESIGN LOCK; discard topology rewrites):\n'
       + JSON.stringify(plan)
     : '';
   contents.push({
