@@ -1101,7 +1101,7 @@
       </details>
       <details class="lg-panel" open data-panel="consts">
         <summary>constants</summary>
-        <p class="lg-detail-hint" style="margin:0 0 8px;">Not graph memory. Budgets like MAX_ATTEMPTS live here — they become consts.py, not TypedDict fields.</p>
+        <p class="lg-detail-hint" style="margin:0 0 8px;">Not graph memory. Budgets like MAX_ATTEMPTS live here — they become consts.py. Nodes can use them: on budget spent?, compare attempts against the constant.</p>
         <div id="const-list"></div>
         <button class="lg-btn" style="width:100%; margin-top:4px;" onclick="addConstRow()">+ constant</button>
       </details>
@@ -4104,6 +4104,98 @@ const PRED_OP_OPTIONS = [
   ['!=', '!='],
 ];
 
+function valueSourceToken(mode, name) {
+  const rm = normalizeRightMode(mode);
+  if (rm === 'const') return 'const:' + (name || '');
+  return 'key:' + (name || '');
+}
+
+function parseValueSource(raw) {
+  const s = String(raw || '');
+  if (s.indexOf('const:') === 0) return { mode: 'const', name: s.slice(6) };
+  if (s.indexOf('key:') === 0) return { mode: 'key', name: s.slice(4) };
+  return { mode: 'key', name: '' };
+}
+
+function fillValueSourceSelect(selectEl, selectedMode, selectedName) {
+  const rm = normalizeRightMode(selectedMode);
+  const selected = rm === 'literal' ? '' : valueSourceToken(rm, selectedName);
+  const stateKeys = stateVarNames();
+  const constKeys = constVarNames();
+  let html = '<option value="">pick a value</option>';
+  if (stateKeys.length) {
+    html += '<optgroup label="shared state">';
+    stateKeys.forEach(k => {
+      const val = 'key:' + k;
+      html += '<option value="' + escapeHtml(val) + '"' + (selected === val ? ' selected' : '') + '>' + escapeHtml(k) + '</option>';
+    });
+    html += '</optgroup>';
+  }
+  if (constKeys.length) {
+    html += '<optgroup label="constants">';
+    constKeys.forEach(k => {
+      const val = 'const:' + k;
+      html += '<option value="' + escapeHtml(val) + '"' + (selected === val ? ' selected' : '') + '>' + escapeHtml(k) + '</option>';
+    });
+    html += '</optgroup>';
+  }
+  selectEl.innerHTML = html;
+  if (selectedName && !selectEl.value) {
+    const dead = document.createElement('option');
+    dead.value = selected || valueSourceToken(rm === 'literal' ? 'key' : rm, selectedName);
+    dead.textContent = selectedName + ' (missing)';
+    dead.selected = true;
+    selectEl.appendChild(dead);
+  }
+}
+
+function appendValueOrLiteralControls(parent, getMode, setMode, getName, setName, onChange, opts) {
+  const modeSel = document.createElement('select');
+  modeSel.className = 'lg-detail-line';
+  const rm = normalizeRightMode(getMode());
+  const useLiteral = rm === 'literal';
+  modeSel.innerHTML =
+    '<option value="value"' + (!useLiteral ? ' selected' : '') + '>value</option>' +
+    '<option value="literal"' + (useLiteral ? ' selected' : '') + '>literal</option>';
+  modeSel.addEventListener('change', () => {
+    if (modeSel.value === 'literal') setMode('literal');
+    else {
+      const was = normalizeRightMode(getMode());
+      if (was === 'literal') {
+        setMode('key');
+        setName('');
+      } else {
+        setMode(was === 'const' ? 'const' : 'key');
+      }
+    }
+    onChange();
+    renderNodeDetail();
+  });
+  parent.appendChild(modeSel);
+  if (useLiteral) {
+    const lit = document.createElement('input');
+    lit.className = 'lg-detail-line';
+    lit.placeholder = (opts && opts.literalPlaceholder) || '3';
+    lit.value = getName() || (opts && opts.literalDefault) || '';
+    lit.addEventListener('input', () => {
+      setName(lit.value);
+      onChange();
+    });
+    parent.appendChild(lit);
+  } else {
+    const sel = document.createElement('select');
+    sel.className = 'lg-detail-line';
+    fillValueSourceSelect(sel, getMode(), getName());
+    sel.addEventListener('change', () => {
+      const picked = parseValueSource(sel.value);
+      setMode(picked.mode);
+      setName(picked.name);
+      onChange();
+    });
+    parent.appendChild(sel);
+  }
+}
+
 function appendPredicateClauseRow(parent, n, clause, onMutate, removable) {
   const pred = document.createElement('div');
   pred.className = 'lg-pred-row';
@@ -4138,60 +4230,15 @@ function appendPredicateClauseRow(parent, n, clause, onMutate, removable) {
   pred.appendChild(op);
   const needsRight = !isUnaryPredOp(clause.op);
   if (needsRight) {
-    const mode = document.createElement('select');
-    mode.className = 'lg-detail-line';
-    const rm = normalizeRightMode(clause.rightMode);
-    mode.innerHTML =
-      '<option value="key"' + (rm === 'key' ? ' selected' : '') + '>other key</option>' +
-      '<option value="const"' + (rm === 'const' ? ' selected' : '') + '>constant</option>' +
-      '<option value="literal"' + (rm === 'literal' ? ' selected' : '') + '>literal</option>';
-    mode.addEventListener('change', () => {
-      clause.rightMode = mode.value;
-      onMutate();
-      renderNodeDetail();
-    });
-    pred.appendChild(mode);
-    if (rm === 'literal') {
-      const lit = document.createElement('input');
-      lit.className = 'lg-detail-line';
-      lit.placeholder = '3';
-      lit.value = clause.right || '';
-      lit.addEventListener('input', () => {
-        clause.right = lit.value;
-        onMutate();
-      });
-      pred.appendChild(lit);
-    } else if (rm === 'const') {
-      const names = constVarNames();
-      const right = document.createElement('select');
-      right.className = 'lg-detail-line';
-      right.innerHTML = '<option value="">constant</option>' + names.map(k =>
-        '<option value="' + escapeHtml(k) + '"' + (clause.right === k ? ' selected' : '') + '>' + escapeHtml(k) + '</option>'
-      ).join('');
-      if (clause.right && names.indexOf(clause.right) < 0) {
-        const dead = document.createElement('option');
-        dead.value = clause.right; dead.textContent = clause.right + ' (missing)'; dead.selected = true;
-        right.appendChild(dead);
-      }
-      right.addEventListener('change', () => {
-        clause.right = right.value;
-        onMutate();
-        renderNodes();
-      });
-      pred.appendChild(right);
-    } else {
-      const right = document.createElement('select');
-      right.className = 'lg-detail-line';
-      right.innerHTML = '<option value="">state key</option>' + stateVarNames().map(k =>
-        '<option value="' + escapeHtml(k) + '"' + (clause.right === k ? ' selected' : '') + '>' + escapeHtml(k) + '</option>'
-      ).join('');
-      right.addEventListener('change', () => {
-        clause.right = right.value;
-        onMutate();
-        renderNodes();
-      });
-      pred.appendChild(right);
-    }
+    appendValueOrLiteralControls(
+      pred,
+      () => clause.rightMode,
+      (m) => { clause.rightMode = m; },
+      () => clause.right,
+      (v) => { clause.right = v; },
+      onMutate,
+      { literalPlaceholder: '3' }
+    );
   }
   if (removable) {
     const rm = document.createElement('button');
@@ -4402,7 +4449,7 @@ function renderNodeDetail() {
       addDetailLabel(panel, 'user prompt');
       const pr = document.createElement('textarea');
       pr.className = 'lg-detail-area';
-      pr.placeholder = 'Use {messages} or other read keys';
+      pr.placeholder = 'Use {messages}, {question}, or a constant like {MAX_ATTEMPTS}';
       pr.value = n.detail.prompt || '';
       pr.addEventListener('input', () => { n.detail.prompt = pr.value; });
       panel.appendChild(pr);
@@ -4696,48 +4743,23 @@ function renderNodeDetail() {
     addDetailLabel(panel, 'N');
     const nRow = document.createElement('div');
     nRow.className = 'lg-pred-row';
-    const nMode = document.createElement('select');
-    nMode.className = 'lg-detail-line';
-    nMode.innerHTML =
-      '<option value="key"' + (n.detail.stopMaxMode === 'key' ? ' selected' : '') + '>state key</option>' +
-      '<option value="const"' + (n.detail.stopMaxMode === 'const' ? ' selected' : '') + '>constant</option>' +
-      '<option value="literal"' + (n.detail.stopMaxMode === 'literal' ? ' selected' : '') + '>literal</option>';
-    nMode.addEventListener('change', () => {
-      n.detail.stopMaxMode = nMode.value;
-      renderNodeDetail();
-    });
-    nRow.appendChild(nMode);
-    if (n.detail.stopMaxMode === 'literal') {
-      const lit = document.createElement('input');
-      lit.className = 'lg-detail-line';
-      lit.placeholder = '2';
-      lit.value = n.detail.stopMax || '2';
-      lit.addEventListener('input', () => { n.detail.stopMax = lit.value; });
-      nRow.appendChild(lit);
-    } else if (n.detail.stopMaxMode === 'const') {
-      const names = constVarNames();
-      const lim = document.createElement('select');
-      lim.className = 'lg-detail-line';
-      lim.innerHTML = '<option value="">constant</option>' + names.map(k =>
-        '<option value="' + escapeHtml(k) + '"' + (n.detail.stopMax === k ? ' selected' : '') + '>' + escapeHtml(k) + '</option>'
-      ).join('');
-      lim.addEventListener('change', () => { n.detail.stopMax = lim.value; });
-      nRow.appendChild(lim);
-    } else {
-      const lim = document.createElement('select');
-      lim.className = 'lg-detail-line';
-      lim.innerHTML = '<option value="">state key</option>' + stateVarNames().map(k =>
-        '<option value="' + escapeHtml(k) + '"' + (n.detail.stopMax === k ? ' selected' : '') + '>' + escapeHtml(k) + '</option>'
-      ).join('');
-      lim.addEventListener('change', () => { n.detail.stopMax = lim.value; });
-      nRow.appendChild(lim);
-    }
+    appendValueOrLiteralControls(
+      nRow,
+      () => n.detail.stopMaxMode,
+      (m) => { n.detail.stopMaxMode = m; },
+      () => n.detail.stopMax,
+      (v) => { n.detail.stopMax = v; },
+      () => renderNodes(),
+      { literalPlaceholder: '2', literalDefault: '2' }
+    );
     panel.appendChild(nRow);
   } else {
   addDetailLabel(panel, 'if');
   const hint = document.createElement('div');
   hint.className = 'lg-detail-hint';
-  hint.textContent = 'This conditional is the router. One check, or AND / OR several (including is empty).';
+  hint.textContent = constVarNames().length
+    ? 'This conditional is the router. The value list includes shared state and constants (e.g. MAX_ATTEMPTS).'
+    : 'This conditional is the router. Add a budget in CONSTANTS so it appears in the value list.';
   panel.appendChild(hint);
   if (!Array.isArray(n.detail.predExtra)) n.detail.predExtra = [];
   const box = document.createElement('div');
@@ -5164,6 +5186,27 @@ function applyTemplateState(vars) {
   });
 }
 
+function applyTemplateConsts(vars) {
+  const rows = (vars || []).map(v => ({
+    key: v.key,
+    val: v.val != null ? String(v.val) : '',
+    type: v.type || 'int',
+  }));
+  if (!_addingTemplate) {
+    graphConsts = rows;
+    renderConsts();
+    return;
+  }
+  const have = new Set(graphConsts.map(v => v.key));
+  rows.forEach(v => {
+    if (!have.has(v.key)) {
+      graphConsts.push(v);
+      have.add(v.key);
+    }
+  });
+  renderConsts();
+}
+
 function appendOrSetProblem(text) {
   const el = document.getElementById('problem-desc');
   if (!el) return;
@@ -5440,12 +5483,12 @@ function loadTemplate(key) {
       system: 'Critique the latest draft. If it is good enough, start with OK. Otherwise give revision notes.',
       prompt: '{messages}',
     };
-    nodes[cond].detail.reads = ['iterations', 'max_iterations'];
+    nodes[cond].detail.reads = ['iterations'];
     nodes[cond].detail.predLeft = 'iterations';
     nodes[cond].detail.predOp = '>=';
-    nodes[cond].detail.predRightMode = 'key';
-    nodes[cond].detail.predRight = 'max_iterations';
-    nodes[cond].detail.condition = 'iterations >= max_iterations';
+    nodes[cond].detail.predRightMode = 'const';
+    nodes[cond].detail.predRight = 'MAX_ITERATIONS';
+    nodes[cond].detail.condition = 'iterations >= MAX_ITERATIONS';
     link('start', gen);
     link(gen, reflect);
     link(reflect, cond);
@@ -5454,7 +5497,9 @@ function loadTemplate(key) {
     applyTemplateState([
       { key: 'messages', val: '[]' },
       { key: 'iterations', val: '0' },
-      { key: 'max_iterations', val: '3' },
+    ]);
+    applyTemplateConsts([
+      { key: 'MAX_ITERATIONS', val: '3', type: 'int' },
     ]);
     applyReflectionLayout(gen, reflect, cond, end);
   } else if (key === 'reflexion') {
@@ -5517,14 +5562,14 @@ function loadTemplate(key) {
       outputSchemaId: reviseSch.id,
       bindTools: true,
     };
-    nodes[eventLoop].detail.reads = ['messages', 'max_iterations'];
+    nodes[eventLoop].detail.reads = ['messages'];
     nodes[eventLoop].detail.stopMode = 'tool_rounds';
-    nodes[eventLoop].detail.stopMaxMode = 'key';
-    nodes[eventLoop].detail.stopMax = 'max_iterations';
+    nodes[eventLoop].detail.stopMaxMode = 'const';
+    nodes[eventLoop].detail.stopMax = 'MAX_ITERATIONS';
     nodes[eventLoop].detail.predLeft = '';
     nodes[eventLoop].detail.predOp = '>=';
-    nodes[eventLoop].detail.predRightMode = 'key';
-    nodes[eventLoop].detail.predRight = 'max_iterations';
+    nodes[eventLoop].detail.predRightMode = 'const';
+    nodes[eventLoop].detail.predRight = 'MAX_ITERATIONS';
     nodes[eventLoop].detail.condition = '';
     link('start', draft);
     link(draft, execTools);
@@ -5535,7 +5580,9 @@ function loadTemplate(key) {
     applyTemplateState([
       { key: 'messages', val: '[]', type: 'messages' },
       { key: 'search_queries', val: '[]', type: 'list' },
-      { key: 'max_iterations', val: '2', type: 'int' },
+    ]);
+    applyTemplateConsts([
+      { key: 'MAX_ITERATIONS', val: '2', type: 'int' },
     ]);
     applyTemplateOutputs([
       { key: 'answer', schemaId: reviseSch.id, field: 'answer' },
@@ -5757,9 +5804,9 @@ function loadTemplate(key) {
     setRouterTruthy(grounded, 'generation_ok');
     nodes[budget].detail.predLeft = 'attempts';
     nodes[budget].detail.predOp = '>=';
-    nodes[budget].detail.predRightMode = 'key';
-    nodes[budget].detail.predRight = 'max_attempts';
-    nodes[budget].detail.reads = ['attempts', 'max_attempts'];
+    nodes[budget].detail.predRightMode = 'const';
+    nodes[budget].detail.predRight = 'MAX_ATTEMPTS';
+    nodes[budget].detail.reads = ['attempts'];
     nodes[budget].detail.stopMode = 'predicate';
     syncPredicateCondition(nodes[budget]);
     applyTemplateState([
@@ -5768,7 +5815,9 @@ function loadTemplate(key) {
       { key: 'generation', val: '', type: 'str' },
       { key: 'generation_ok', val: 'false', type: 'bool' },
       { key: 'attempts', val: '0', type: 'int' },
-      { key: 'max_attempts', val: '3', type: 'int' },
+    ]);
+    applyTemplateConsts([
+      { key: 'MAX_ATTEMPTS', val: '3', type: 'int' },
     ]);
     applyTemplateOutputs([
       { key: 'generation', schemaId: genSch.id, field: 'generation' },
@@ -5922,9 +5971,9 @@ function loadTemplate(key) {
     setRouterTruthy(useful, 'useful');
     nodes[budget].detail.predLeft = 'attempts';
     nodes[budget].detail.predOp = '>=';
-    nodes[budget].detail.predRightMode = 'key';
-    nodes[budget].detail.predRight = 'max_attempts';
-    nodes[budget].detail.reads = ['attempts', 'max_attempts'];
+    nodes[budget].detail.predRightMode = 'const';
+    nodes[budget].detail.predRight = 'MAX_ATTEMPTS';
+    nodes[budget].detail.reads = ['attempts'];
     nodes[budget].detail.stopMode = 'predicate';
     syncPredicateCondition(nodes[budget]);
     applyTemplateState([
@@ -5936,7 +5985,9 @@ function loadTemplate(key) {
       { key: 'grounded', val: 'false', type: 'bool' },
       { key: 'useful', val: 'false', type: 'bool' },
       { key: 'attempts', val: '0', type: 'int' },
-      { key: 'max_attempts', val: '3', type: 'int' },
+    ]);
+    applyTemplateConsts([
+      { key: 'MAX_ATTEMPTS', val: '3', type: 'int' },
     ]);
     applyTemplateOutputs([
       { key: 'generation', schemaId: genSch.id, field: 'generation' },
@@ -8258,7 +8309,7 @@ const FLOW_GUIDES = {
       'Write what corpus you search and what the user should get.',
       'Cycle: retrieve once → generate → grounded? → end, or retry generate if budget remains.',
     ],
-    whyRoles: 'grade_generation is the output guard (LLM + GradeGeneration schema). grounded? only reads generation_ok. budget spent? is attempts vs max_attempts, not another LLM.',
+    whyRoles: 'grade_generation is the output guard (LLM + GradeGeneration schema). grounded? only reads generation_ok. budget spent? is attempts vs MAX_ATTEMPTS (a constant, not shared state), not another LLM.',
     roles: [
       { kind: 'action', name: 'retrieve', why: 'fetch passages from the corpus (once)' },
       { kind: 'action', name: 'generate', why: 'answer from those passages; attempts += 1' },

@@ -205,6 +205,19 @@ assert.equal(
   'Q: What is LangGraph?\nuser: hello',
 );
 assert.equal(interpolatePrompt('{missing}', { answer: 'x' }), '{missing}');
+assert.equal(
+  interpolatePrompt('Retry up to {MAX_ATTEMPTS}', { attempts: 1 }, {
+    consts: [{ key: 'MAX_ATTEMPTS', type: 'int', val: '3' }],
+  }),
+  'Retry up to 3',
+);
+assert.equal(
+  interpolatePrompt('{MAX_ATTEMPTS}', { MAX_ATTEMPTS: 9 }, {
+    consts: [{ key: 'MAX_ATTEMPTS', type: 'int', val: '3' }],
+  }),
+  '9',
+  'state wins over constants on name collision',
+);
 
 let seenPrompt = '';
 const promptGraph = {
@@ -253,6 +266,13 @@ assert.equal(
   evalWriteExpr('response.generation', { args: { generation: 'hello' } }).value,
   'hello',
 );
+assert.equal(
+  evalWriteExpr('MAX_ATTEMPTS', {
+    state: { attempts: 1 },
+    consts: [{ key: 'MAX_ATTEMPTS', type: 'int', val: '3' }],
+  }).value,
+  3,
+);
 assert.ok(retrieveDemoDocs('What is agent memory?').length > 0);
 assert.equal(retrieveDemoDocs('Who won Wimbledon 2024?').length, 0);
 
@@ -267,7 +287,9 @@ function adaptiveRagGraph() {
       { key: 'grounded', val: 'false', type: 'bool' },
       { key: 'useful', val: 'false', type: 'bool' },
       { key: 'attempts', val: '0', type: 'int' },
-      { key: 'max_attempts', val: '3', type: 'int' },
+    ],
+    consts: [
+      { key: 'MAX_ATTEMPTS', val: '3', type: 'int' },
     ],
     schemas: [
       { id: 'sch-route', name: 'RouteQuery', fields: [{ key: 'datasource', type: 'str' }] },
@@ -381,9 +403,9 @@ function adaptiveRagGraph() {
           stopMode: 'predicate',
           predLeft: 'attempts',
           predOp: '>=',
-          predRightMode: 'key',
-          predRight: 'max_attempts',
-          reads: ['attempts', 'max_attempts'],
+          predRightMode: 'const',
+          predRight: 'MAX_ATTEMPTS',
+          reads: ['attempts'],
         },
       },
       {
@@ -736,5 +758,36 @@ assert.equal(evalPredicate({ attempts: 2 }, {
   predRightMode: 'const',
   predRight: 'MAX_ATTEMPTS',
 }, [{ key: 'MAX_ATTEMPTS', type: 'int', val: '3' }]), false);
+
+const budgetLoop = await runGraph({
+  consts: [{ key: 'MAX_ATTEMPTS', type: 'int', val: '2' }],
+  stateVars: [{ key: 'attempts', val: '0', type: 'int' }],
+  nodes: [
+    { id: 'start', type: 'start', label: 'start' },
+    { id: 'tick', type: 'action', label: 'tick', detail: { kind: 'function', writes: [{ key: 'attempts', op: 'increment' }] } },
+    {
+      id: 'budget',
+      type: 'router',
+      label: 'budget spent?',
+      detail: {
+        stopMode: 'predicate',
+        predLeft: 'attempts',
+        predOp: '>=',
+        predRightMode: 'const',
+        predRight: 'MAX_ATTEMPTS',
+      },
+    },
+    { id: 'end', type: 'end', label: 'end' },
+  ],
+  edges: [
+    { from: 'start', to: 'tick' },
+    { from: 'tick', to: 'budget' },
+    { from: 'budget', to: 'end', label: 'yes' },
+    { from: 'budget', to: 'tick', label: 'no' },
+  ],
+}, 'go');
+assert.equal(budgetLoop.error || '', '');
+assert.equal(budgetLoop.state.attempts, 2);
+assert.ok(budgetLoop.trace.filter(s => s.label === 'tick').length === 2, JSON.stringify(budgetLoop.trace.map(s => s.label)));
 
 console.log('run-graph tests ok');
