@@ -40,7 +40,7 @@ CRITICAL MAPPING RULES (LangCanvas → LangGraph):
 14. Router detail.stopMode "tool_rounds": stop when sum(isinstance(m, ToolMessage) for m in state["messages"]) >= N. N is detail.stopMax as a literal, or the initial value of that shared-state key. Branch "si" = stop, "no" = continue. Do not require a tool_visits counter in state.
 15. Graph "outputs" array is what the compiled graph should print from the last AIMessage tool call: each {key, schemaId, field} maps to args.get("field").
 16. type "join" → real add_node("label", fn, defer=True). It is a barrier, not a router. Incoming workers add_edge to the join; the join add_edge to the next node (usually the supervisor). The join function may return {}. It must not run until every incoming branch has finished AND every waitKeys / waitUntil value is non-empty. Do NOT use add_conditional_edges for a join.
-17. Shared-state TypedDict: map type str→str, int→int, float→float, bool→bool, list / list[str] / messages→list.
+17. Shared-state TypedDict: map type str→str, int→int, float→float, bool→bool, list→list, list[str]→list[str], messages→list.
 18. Output plain Python only. Multi-file: "# chains.py" / "# main.py" headers. No markdown fences. No trailing junk.`;
 
 const hitsByUid = new Map();

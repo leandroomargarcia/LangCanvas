@@ -271,7 +271,7 @@
   }
   .lg-state-row input.k { width: 72px; }
   .lg-state-row input.v { flex: 1; min-width: 0; }
-  .lg-state-row select.t { width: 70px; font-size: 11px; padding: 5px 4px; }
+  .lg-state-row select.t { width: 92px; font-size: 11px; padding: 5px 4px; }
   .lg-state-row .rm { cursor: pointer; color: var(--ink-soft); font-size: 15px; padding: 0 3px; }
   .lg-detail-head {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -2733,7 +2733,7 @@ function toggleMode(m) {
   renderNodes();
 }
 
-const STATE_TYPES = ['str', 'int', 'float', 'bool', 'list', 'messages'];
+const STATE_TYPES = ['str', 'int', 'float', 'bool', 'list', 'list[str]', 'messages'];
 const FIELD_PRIMITIVES = ['str', 'int', 'float', 'bool', 'list[str]', 'list'];
 
 function inferStateType(key) {
@@ -2788,7 +2788,10 @@ function renderState() {
       renderNodes();
       renderNodeDetail();
     });
-    ts.addEventListener('change', () => { stateVars[i].type = ts.value; });
+    ts.addEventListener('change', () => {
+      stateVars[i].type = ts.value;
+      markGraphDirty();
+    });
     vi.addEventListener('input', () => { stateVars[i].val = vi.value; });
     rm.addEventListener('click', () => {
       stateVars.splice(i, 1);
@@ -7232,7 +7235,8 @@ function buildLocalSkeletonCode() {
       const py = t === 'int' ? 'int'
         : t === 'float' ? 'float'
         : t === 'bool' ? 'bool'
-        : t === 'list' || t === 'list[str]' || t === 'messages' ? 'list'
+        : t === 'list[str]' ? 'list[str]'
+        : t === 'list' || t === 'messages' ? 'list'
         : 'str';
       code += '    ' + pyName(k, k) + ': ' + py + '\n';
     });
