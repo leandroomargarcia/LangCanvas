@@ -41,7 +41,8 @@ CRITICAL MAPPING RULES (LangCanvas → LangGraph):
 15. Graph "outputs" array is what the compiled graph should print from the last AIMessage tool call: each {key, schemaId, field} maps to args.get("field").
 16. type "join" → real add_node("label", fn, defer=True). It is a barrier, not a router. Incoming workers add_edge to the join; the join add_edge to the next node (usually the supervisor). The join function may return {}. It must not run until every incoming branch has finished AND every waitKeys / waitUntil value is non-empty. Do NOT use add_conditional_edges for a join.
 17. Shared-state TypedDict: map type str→str, int→int, float→float, bool→bool, list→list, list[str]→list[str], messages→list.
-18. Output plain Python only. Multi-file: "# chains.py" / "# main.py" headers. No markdown fences. No trailing junk.`;
+18. graph.consts are module constants, NOT TypedDict fields. Emit "# consts.py" with NAME = value (int/float/bool/str), then "from consts import ..." in main.py. If a router clause has compare/rightMode "const", the Python test uses that constant name (e.g. state.get("attempts") >= MAX_ATTEMPTS), never state.get("MAX_ATTEMPTS").
+19. Output plain Python only. Multi-file: "# chains.py" / "# consts.py" / "# main.py" headers. No markdown fences. No trailing junk.`;
 
 const hitsByUid = new Map();
 const lastOkByUid = new Map();
@@ -290,6 +291,7 @@ function buildCodeSpec(graph) {
   const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
   const edges = Array.isArray(graph?.edges) ? graph.edges : [];
   const stateVars = Array.isArray(graph?.stateVars) ? graph.stateVars : [];
+  const consts = Array.isArray(graph?.consts) ? graph.consts : [];
 
   const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
   const nameOf = {};
@@ -403,6 +405,7 @@ function buildCodeSpec(graph) {
   return {
     problem: typeof graph?.problem === 'string' ? graph.problem.slice(0, 500) : '',
     stateVars: stateVars.map((v) => ({ key: v.key, val: v.val, type: v.type || 'str' })).slice(0, 30),
+    consts: consts.map((v) => ({ key: v.key, val: v.val, type: v.type || 'int' })).slice(0, 20),
     add_nodes: actions.concat(joins.map((j) => ({ name: j.name, label: j.label, defer: true }))),
     joins,
     routers_as_conditional_edges_only: routers,

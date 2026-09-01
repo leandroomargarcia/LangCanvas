@@ -724,4 +724,17 @@ assert.equal(evalPredicate({ precio_ref: 12.5 }, {
   predRight: '12.4',
 }), false);
 
+assert.equal(evalPredicate({ attempts: 3 }, {
+  predLeft: 'attempts',
+  predOp: '>=',
+  predRightMode: 'const',
+  predRight: 'MAX_ATTEMPTS',
+}, [{ key: 'MAX_ATTEMPTS', type: 'int', val: '3' }]), true);
+assert.equal(evalPredicate({ attempts: 2 }, {
+  predLeft: 'attempts',
+  predOp: '>=',
+  predRightMode: 'const',
+  predRight: 'MAX_ATTEMPTS',
+}, [{ key: 'MAX_ATTEMPTS', type: 'int', val: '3' }]), false);
+
 console.log('run-graph tests ok');

@@ -269,7 +269,7 @@
     font-family: inherit; font-size: 12.5px; padding: 5px 7px;
     border: 1px solid var(--line-strong); border-radius: 6px; background: var(--paper);
   }
-  .lg-state-row input.k { width: 72px; }
+  .lg-state-row input.k { width: 118px; }
   .lg-state-row input.v { flex: 1; min-width: 0; }
   .lg-state-row select.t { width: 92px; font-size: 11px; padding: 5px 4px; }
   .lg-state-row .rm { cursor: pointer; color: var(--ink-soft); font-size: 15px; padding: 0 3px; }
@@ -1099,6 +1099,12 @@
         <div id="state-list"></div>
         <button class="lg-btn" style="width:100%; margin-top:4px;" onclick="addStateRow()">+ variable</button>
       </details>
+      <details class="lg-panel" open data-panel="consts">
+        <summary>constants</summary>
+        <p class="lg-detail-hint" style="margin:0 0 8px;">Not graph memory. Budgets like MAX_ATTEMPTS live here — they become consts.py, not TypedDict fields.</p>
+        <div id="const-list"></div>
+        <button class="lg-btn" style="width:100%; margin-top:4px;" onclick="addConstRow()">+ constant</button>
+      </details>
       <details class="lg-panel" open data-panel="schemas">
         <summary>schemas</summary>
         <p class="lg-detail-hint" style="margin:0 0 8px;">I/O contracts (Pydantic). What each LLM node returns.</p>
@@ -1611,6 +1617,7 @@ let selected = new Set();
 let dragGroupOrigins = null; // { id: {x,y} } when moving a multi-selection
 let marquee = null; // { x0, y0, x1, y1, additive }
 let stateVars = [];
+let graphConsts = [];
 let schemas = [];
 let graphOutputs = [];
 let runCurrent = null;
@@ -2734,6 +2741,7 @@ function toggleMode(m) {
 }
 
 const STATE_TYPES = ['str', 'int', 'float', 'bool', 'list', 'list[str]', 'messages'];
+const CONST_TYPES = ['str', 'int', 'float', 'bool'];
 const FIELD_PRIMITIVES = ['str', 'int', 'float', 'bool', 'list[str]', 'list'];
 
 function inferStateType(key) {
@@ -2798,6 +2806,70 @@ function renderState() {
       renderState();
       renderNodes();
       renderNodeDetail();
+    });
+    list.appendChild(div);
+  });
+}
+
+function constVarNames() {
+  return graphConsts.map(v => (v.key || '').trim()).filter(Boolean);
+}
+
+function addConstRow(key, val, type) {
+  graphConsts.push({
+    key: key || '',
+    val: val != null ? String(val) : '',
+    type: type || 'int',
+  });
+  renderConsts();
+  renderNodeDetail();
+  if (!_addingTemplate) markGraphDirty();
+}
+
+function renderConsts() {
+  const list = document.getElementById('const-list');
+  if (!list) return;
+  list.innerHTML = '';
+  graphConsts.forEach((row, i) => {
+    if (!row.type) row.type = 'int';
+    const types = CONST_TYPES.indexOf(row.type) >= 0 ? CONST_TYPES : CONST_TYPES.concat([row.type]);
+    const div = document.createElement('div');
+    div.className = 'lg-state-row';
+    div.innerHTML =
+      '<input class="k" placeholder="MAX_ATTEMPTS" value="' + escapeHtml(row.key) + '">' +
+      '<select class="t">' + types.map(t =>
+        '<option value="' + t + '"' + (row.type === t ? ' selected' : '') + '>' + t + '</option>'
+      ).join('') + '</select>' +
+      '<input class="v" placeholder="3" value="' + escapeHtml(row.val) + '">' +
+      '<span class="rm" title="remove">×</span>';
+    const ki = div.querySelector('input.k');
+    const ts = div.querySelector('select.t');
+    const vi = div.querySelector('input.v');
+    const rm = div.querySelector('.rm');
+    ki.addEventListener('focus', () => { ki.dataset.prev = (ki.value || '').trim(); });
+    ki.addEventListener('input', () => { graphConsts[i].key = ki.value; });
+    ki.addEventListener('change', () => {
+      const prev = ki.dataset.prev || '';
+      const next = (ki.value || '').trim();
+      if (prev && next && prev !== next) renameConstKeyInDetails(prev, next);
+      renderNodes();
+      renderNodeDetail();
+      markGraphDirty();
+    });
+    ts.addEventListener('change', () => {
+      graphConsts[i].type = ts.value;
+      markGraphDirty();
+    });
+    vi.addEventListener('input', () => {
+      graphConsts[i].val = vi.value;
+      markGraphDirty();
+    });
+    rm.addEventListener('click', () => {
+      graphConsts.splice(i, 1);
+      renderConsts();
+      renderNodes();
+      renderNodeDetail();
+      markGraphDirty();
     });
     list.appendChild(div);
   });
@@ -3585,12 +3657,66 @@ function isUnaryPredOp(op) {
   return op === 'empty' || op === 'not_empty' || op === 'truthy';
 }
 
+function normalizeRightMode(mode) {
+  return mode === 'literal' || mode === 'const' ? mode : 'key';
+}
+
+function pythonConstIdent(key) {
+  const raw = String(key || '').trim();
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(raw)) return raw;
+  const cleaned = raw.replace(/[^A-Za-z0-9_]+/g, '_').replace(/^[^A-Za-z_]+/, '');
+  return cleaned || 'CONST';
+}
+
+function parseConstVal(row) {
+  const t = String((row && row.type) || 'str');
+  const s = row && row.val != null ? String(row.val) : '';
+  if (t === 'int') {
+    const n = parseInt(s, 10);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (t === 'float') {
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (t === 'bool') return s === 'true' || s === '1' || s === 'True';
+  return s;
+}
+
+function constValueByKey(key) {
+  const want = String(key || '').trim();
+  if (!want) return undefined;
+  const row = graphConsts.find(v => String(v.key || '').trim() === want);
+  return row ? parseConstVal(row) : undefined;
+}
+
+function pyConstAssign(row) {
+  const name = pythonConstIdent(row.key);
+  const t = String(row.type || 'int');
+  let val;
+  if (t === 'int') val = String(parseConstVal(row));
+  else if (t === 'float') val = String(parseConstVal(row));
+  else if (t === 'bool') val = parseConstVal(row) ? 'True' : 'False';
+  else val = JSON.stringify(String(row.val == null ? '' : row.val));
+  return name + ' = ' + val;
+}
+
+function emitConstsPython() {
+  const rows = graphConsts.filter(v => (v.key || '').trim());
+  if (!rows.length) return '';
+  const names = rows.map(r => pythonConstIdent(r.key));
+  let block = '# consts.py — not graph state\n';
+  rows.forEach(r => { block += pyConstAssign(r) + '\n'; });
+  block += '\n# main.py\nfrom consts import ' + names.join(', ') + '\n';
+  return block;
+}
+
 function normalizePredClause(c) {
   const src = c && typeof c === 'object' ? c : {};
   return {
     left: String(src.left || '').trim(),
     op: src.op || 'empty',
-    rightMode: src.rightMode === 'literal' ? 'literal' : 'key',
+    rightMode: normalizeRightMode(src.rightMode),
     right: src.right != null ? String(src.right) : '',
   };
 }
@@ -3633,7 +3759,9 @@ function pythonPredClause(c) {
   if (c.op === 'not_empty' || c.op === 'truthy') return 'bool(' + left + ')';
   const right = c.rightMode === 'literal'
     ? JSON.stringify(c.right || '')
-    : ('state.get("' + String(c.right || '').replace(/"/g, '\\"') + '")');
+    : c.rightMode === 'const'
+      ? pythonConstIdent(c.right)
+      : ('state.get("' + String(c.right || '').replace(/"/g, '\\"') + '")');
   return left + ' ' + (c.op || '>=') + ' ' + right;
 }
 
@@ -3652,7 +3780,7 @@ function syncPredicateReads(n) {
   const keys = [];
   predicateClauses(n.detail).forEach(c => {
     if (c.left) keys.push(c.left);
-    if (!isUnaryPredOp(c.op) && c.rightMode !== 'literal' && c.right) keys.push(c.right);
+    if (!isUnaryPredOp(c.op) && c.rightMode === 'key' && c.right) keys.push(c.right);
   });
   n.detail.reads = [...new Set(keys)];
 }
@@ -3736,19 +3864,19 @@ function ensureNodeDetail(n) {
       condition: d.condition != null ? String(d.condition) : '',
       predLeft: d.predLeft != null ? String(d.predLeft) : '',
       predOp: d.predOp || (d.predLeft ? '>=' : 'empty'),
-      predRightMode: d.predRightMode === 'literal' ? 'literal' : 'key',
+      predRightMode: normalizeRightMode(d.predRightMode),
       predRight: d.predRight != null ? String(d.predRight) : '',
       predJoin: d.predJoin === 'or' ? 'or' : 'and',
       predExtra: Array.isArray(d.predExtra)
         ? d.predExtra.map(c => ({
             left: String((c && c.left) || ''),
             op: (c && c.op) || 'empty',
-            rightMode: (c && c.rightMode) === 'literal' ? 'literal' : 'key',
+            rightMode: normalizeRightMode(c && c.rightMode),
             right: c && c.right != null ? String(c.right) : '',
           }))
         : [],
       stopMode: d.stopMode === 'tool_rounds' ? 'tool_rounds' : 'predicate',
-      stopMaxMode: d.stopMaxMode === 'literal' ? 'literal' : 'key',
+      stopMaxMode: normalizeRightMode(d.stopMaxMode),
       stopMax: d.stopMax != null ? String(d.stopMax) : '',
       branches: Array.isArray(d.branches)
         ? d.branches.map(b => ({
@@ -3809,9 +3937,13 @@ function nodeDetailIssues(n) {
     }
   }
   if (n.type === 'router') {
+    const constKeys = new Set(constVarNames());
     if (n.detail.stopMode === 'tool_rounds') {
-      if (n.detail.stopMaxMode !== 'literal' && n.detail.stopMax && !keys.has(n.detail.stopMax)) {
+      if (n.detail.stopMaxMode === 'key' && n.detail.stopMax && !keys.has(n.detail.stopMax)) {
         issues.push('tool-rounds limit key is not in shared state');
+      }
+      if (n.detail.stopMaxMode === 'const' && n.detail.stopMax && !constKeys.has(n.detail.stopMax)) {
+        issues.push('tool-rounds limit is not in constants');
       }
     } else {
       const clauses = predicateClauses(n.detail);
@@ -3824,8 +3956,11 @@ function nodeDetailIssues(n) {
         if (c.left && !keys.has(c.left)) {
           issues.push(tag + 'left side is not in shared state');
         }
-        if (c.left && !isUnaryPredOp(c.op) && c.rightMode !== 'literal' && c.right && !keys.has(c.right)) {
+        if (c.left && !isUnaryPredOp(c.op) && c.rightMode === 'key' && c.right && !keys.has(c.right)) {
           issues.push(tag + 'right side is not in shared state');
+        }
+        if (c.left && !isUnaryPredOp(c.op) && c.rightMode === 'const' && c.right && !constKeys.has(c.right)) {
+          issues.push(tag + 'right side is not in constants');
         }
       });
     }
@@ -3854,14 +3989,29 @@ function renameStateKeyInDetails(prev, next) {
       n.detail.waitKeys = n.detail.waitKeys.map(k => k === prev ? next : k);
     }
     if (n.detail.predLeft === prev) n.detail.predLeft = next;
+    if (n.detail.stopMaxMode === 'key' && n.detail.stopMax === prev) n.detail.stopMax = next;
     if (n.detail.predRightMode === 'key' && n.detail.predRight === prev) n.detail.predRight = next;
     if (Array.isArray(n.detail.predExtra)) {
       n.detail.predExtra.forEach(c => {
         if (c.left === prev) c.left = next;
-        if (c.rightMode !== 'literal' && c.right === prev) c.right = next;
+        if (c.rightMode === 'key' && c.right === prev) c.right = next;
       });
     }
     syncPredicateCondition(n);
+  });
+}
+
+function renameConstKeyInDetails(prev, next) {
+  Object.values(nodes).forEach(n => {
+    if (!n.detail) return;
+    if (n.detail.stopMaxMode === 'const' && n.detail.stopMax === prev) n.detail.stopMax = next;
+    if (n.detail.predRightMode === 'const' && n.detail.predRight === prev) n.detail.predRight = next;
+    if (Array.isArray(n.detail.predExtra)) {
+      n.detail.predExtra.forEach(c => {
+        if (c.rightMode === 'const' && c.right === prev) c.right = next;
+      });
+    }
+    if (n.type === 'router') syncPredicateCondition(n);
   });
 }
 
@@ -3990,16 +4140,18 @@ function appendPredicateClauseRow(parent, n, clause, onMutate, removable) {
   if (needsRight) {
     const mode = document.createElement('select');
     mode.className = 'lg-detail-line';
+    const rm = normalizeRightMode(clause.rightMode);
     mode.innerHTML =
-      '<option value="key"' + (clause.rightMode !== 'literal' ? ' selected' : '') + '>other key</option>' +
-      '<option value="literal"' + (clause.rightMode === 'literal' ? ' selected' : '') + '>literal</option>';
+      '<option value="key"' + (rm === 'key' ? ' selected' : '') + '>other key</option>' +
+      '<option value="const"' + (rm === 'const' ? ' selected' : '') + '>constant</option>' +
+      '<option value="literal"' + (rm === 'literal' ? ' selected' : '') + '>literal</option>';
     mode.addEventListener('change', () => {
       clause.rightMode = mode.value;
       onMutate();
       renderNodeDetail();
     });
     pred.appendChild(mode);
-    if (clause.rightMode === 'literal') {
+    if (rm === 'literal') {
       const lit = document.createElement('input');
       lit.className = 'lg-detail-line';
       lit.placeholder = '3';
@@ -4009,6 +4161,24 @@ function appendPredicateClauseRow(parent, n, clause, onMutate, removable) {
         onMutate();
       });
       pred.appendChild(lit);
+    } else if (rm === 'const') {
+      const names = constVarNames();
+      const right = document.createElement('select');
+      right.className = 'lg-detail-line';
+      right.innerHTML = '<option value="">constant</option>' + names.map(k =>
+        '<option value="' + escapeHtml(k) + '"' + (clause.right === k ? ' selected' : '') + '>' + escapeHtml(k) + '</option>'
+      ).join('');
+      if (clause.right && names.indexOf(clause.right) < 0) {
+        const dead = document.createElement('option');
+        dead.value = clause.right; dead.textContent = clause.right + ' (missing)'; dead.selected = true;
+        right.appendChild(dead);
+      }
+      right.addEventListener('change', () => {
+        clause.right = right.value;
+        onMutate();
+        renderNodes();
+      });
+      pred.appendChild(right);
     } else {
       const right = document.createElement('select');
       right.className = 'lg-detail-line';
@@ -4047,7 +4217,7 @@ function firstClauseLive(d) {
     set left(v) { d.predLeft = v; },
     get op() { return d.predOp || 'empty'; },
     set op(v) { d.predOp = v; },
-    get rightMode() { return d.predRightMode === 'literal' ? 'literal' : 'key'; },
+    get rightMode() { return normalizeRightMode(d.predRightMode); },
     set rightMode(v) { d.predRightMode = v; },
     get right() { return d.predRight || ''; },
     set right(v) { d.predRight = v; },
@@ -4529,7 +4699,8 @@ function renderNodeDetail() {
     const nMode = document.createElement('select');
     nMode.className = 'lg-detail-line';
     nMode.innerHTML =
-      '<option value="key"' + (n.detail.stopMaxMode !== 'literal' ? ' selected' : '') + '>state key</option>' +
+      '<option value="key"' + (n.detail.stopMaxMode === 'key' ? ' selected' : '') + '>state key</option>' +
+      '<option value="const"' + (n.detail.stopMaxMode === 'const' ? ' selected' : '') + '>constant</option>' +
       '<option value="literal"' + (n.detail.stopMaxMode === 'literal' ? ' selected' : '') + '>literal</option>';
     nMode.addEventListener('change', () => {
       n.detail.stopMaxMode = nMode.value;
@@ -4543,6 +4714,15 @@ function renderNodeDetail() {
       lit.value = n.detail.stopMax || '2';
       lit.addEventListener('input', () => { n.detail.stopMax = lit.value; });
       nRow.appendChild(lit);
+    } else if (n.detail.stopMaxMode === 'const') {
+      const names = constVarNames();
+      const lim = document.createElement('select');
+      lim.className = 'lg-detail-line';
+      lim.innerHTML = '<option value="">constant</option>' + names.map(k =>
+        '<option value="' + escapeHtml(k) + '"' + (n.detail.stopMax === k ? ' selected' : '') + '>' + escapeHtml(k) + '</option>'
+      ).join('');
+      lim.addEventListener('change', () => { n.detail.stopMax = lim.value; });
+      nRow.appendChild(lim);
     } else {
       const lim = document.createElement('select');
       lim.className = 'lg-detail-line';
@@ -4860,7 +5040,7 @@ function resetAll() {
   clearTimeout(resetConfirmTimeout);
   resetConfirmPending = false;
   btn.textContent = 'reset';
-  nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = []; schemas = []; graphOutputs = [];
+  nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = []; graphConsts = []; schemas = []; graphOutputs = [];
   selected.clear();
   coachPattern = '';
   const problem = document.getElementById('problem-desc');
@@ -4868,6 +5048,7 @@ function resetAll() {
   ensureStartNode();
   resetRun();
   renderState();
+  renderConsts();
   renderSchemas();
   renderGraphOutputs();
   renderNodes();
@@ -4937,7 +5118,7 @@ function pickTemplate(key) {
 }
 
 function clearCanvasGraph() {
-  nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = []; schemas = []; graphOutputs = [];
+  nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = []; graphConsts = []; schemas = []; graphOutputs = [];
   selected.clear();
   ensureStartNode();
 }
@@ -5890,6 +6071,7 @@ function loadTemplate(key) {
 
   resetRun();
   renderState();
+  renderConsts();
   renderSchemas();
   renderNodes();
   renderNodeDetail();
@@ -5954,6 +6136,7 @@ function serializeGraph() {
     version: 2,
     problem: document.getElementById('problem-desc').value,
     stateVars: stateVars.map(v => ({ key: v.key, val: v.val, type: v.type || inferStateType(v.key) })),
+    consts: graphConsts.map(v => ({ key: v.key, val: v.val, type: v.type || 'int' })),
     schemas: schemas.map(s => ({
       id: s.id,
       name: s.name,
@@ -6009,7 +6192,7 @@ function importJSONPrompt() {
 function loadGraphData(data) {
   graphHydrating = true;
   try {
-  nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = []; schemas = []; graphOutputs = [];
+  nodes = {}; edges = []; nodeSeq = 0; colorSeq = 0; stateVars = []; graphConsts = []; schemas = []; graphOutputs = [];
   (data.schemas || []).forEach(s => {
     schemas.push({
       id: s.id || uid('schema'),
@@ -6052,6 +6235,11 @@ function loadGraphData(data) {
     val: v.val,
     type: v.type || inferStateType(v.key),
   }));
+  (data.consts || []).forEach(v => graphConsts.push({
+    key: v.key,
+    val: v.val,
+    type: v.type || 'int',
+  }));
   graphOutputs = (data.outputs || []).map(o => ({
     key: String((o && o.key) || ''),
     schemaId: String((o && o.schemaId) || ''),
@@ -6060,6 +6248,7 @@ function loadGraphData(data) {
   document.getElementById('problem-desc').value = data.problem || '';
   resetRun();
   renderState();
+  renderConsts();
   renderSchemas();
   renderGraphOutputs();
   renderNodes();
@@ -6180,6 +6369,7 @@ function emptyCanvas() {
     coachPattern = '';
     resetRun();
     renderState();
+    renderConsts();
     renderSchemas();
     renderGraphOutputs();
     renderNodes();
@@ -6866,12 +7056,20 @@ function stopRoundsN(n) {
     const lit = asInt(d.stopMax);
     if (lit != null) return lit;
   }
-  const key = d.stopMax || (d.predRightMode !== 'literal' ? d.predRight : '') || 'max_iterations';
+  if (d.stopMaxMode === 'const') {
+    const nConst = asInt(constValueByKey(d.stopMax));
+    if (nConst != null) return nConst;
+  }
+  const key = d.stopMax || (d.predRightMode === 'key' ? d.predRight : '') || 'max_iterations';
   const fromState = asInt((stateVars.find(v => v.key === key) || {}).val);
   if (fromState != null) return fromState;
   if (d.predRightMode === 'literal') {
     const lit = asInt(d.predRight);
     if (lit != null) return lit;
+  }
+  if (d.predRightMode === 'const') {
+    const nConst = asInt(constValueByKey(d.predRight));
+    if (nConst != null) return nConst;
   }
   return 2;
 }
@@ -7225,6 +7423,8 @@ function buildLocalSkeletonCode() {
   if (needsToolMsg) code += 'from langchain_core.messages import ToolMessage\n';
   if (toolsPy.extraImports) code += toolsPy.extraImports;
   if (schemaPy) code += 'from pydantic import BaseModel, Field\nfrom typing import List\n';
+  const constsPy = emitConstsPython();
+  if (constsPy) code += '\n' + constsPy + '\n';
   code += '\n\n';
   if (schemaPy) code += schemaPy + '\n';
   code += 'class State(TypedDict):\n';
@@ -7539,9 +7739,11 @@ function buildAnalysisPrompt() {
     return '- ' + from + ' → ' + to + (e.label ? ' [' + e.label + ']' : '');
   }).join('\n');
   const stateLine = g.stateVars.map(v => v.key + (v.val ? '=' + v.val : '')).filter(Boolean).join(', ') || '(none)';
+  const constLine = (g.consts || []).map(v => v.key + (v.val ? '=' + v.val : '')).filter(Boolean).join(', ') || '(none)';
   return 'You are an expert in designing agents with LangGraph. A student built this graph to solve a problem. Evaluate whether the DESIGN is a good solution for the problem (do not validate syntax, that is already checked). Point out: missing steps, unnecessary nodes, misplaced decisions, loops that make no sense for the task, and concrete improvement suggestions. Be direct and practical.\n\n' +
     'PROBLEM TO SOLVE:\n' + (g.problem || '(the student did not describe it)') + '\n\n' +
     'SHARED STATE: ' + stateLine + '\n\n' +
+    'CONSTANTS (not state): ' + constLine + '\n\n' +
     'NODES:\n' + (nodeLines || '(none)') + '\n\n' +
     'CONNECTIONS:\n' + (edgeLines || '(none)') + '\n\n' +
     'Give me your design critique.';
@@ -7744,6 +7946,7 @@ function compactGraphForCoach() {
   return {
     problem: g.problem || '',
     state: (g.stateVars || []).map(v => ({ key: v.key, type: v.type, val: v.val })),
+    consts: (g.consts || []).map(v => ({ key: v.key, type: v.type, val: v.val })),
     schemas: (g.schemas || []).map(s => ({
       name: s.name,
       extends: s.extendsId ? (schemaName[s.extendsId] || s.extendsId) : '',
@@ -7784,19 +7987,21 @@ function compactGraphForCoach() {
         if (toolRounds) {
           row.N = d.stopMaxMode === 'literal'
             ? { source: 'literal', value: d.stopMax || '' }
-            : { source: 'state key', key: d.stopMax || '' };
+            : d.stopMaxMode === 'const'
+              ? { source: 'constant', key: d.stopMax || '' }
+              : { source: 'state key', key: d.stopMax || '' };
         } else {
           row.if = {
             left: d.predLeft || '',
             op: d.predOp || 'empty',
-            compare: d.predRightMode === 'literal' ? 'literal' : 'other key',
+            compare: d.predRightMode === 'literal' ? 'literal' : (d.predRightMode === 'const' ? 'constant' : 'other key'),
             right: d.predRight || '',
             join: d.predJoin === 'or' ? 'or' : 'and',
             also: Array.isArray(d.predExtra)
               ? d.predExtra.filter(c => c && c.left).map(c => ({
                   left: c.left,
                   op: c.op || 'empty',
-                  compare: c.rightMode === 'literal' ? 'literal' : 'other key',
+                  compare: c.rightMode === 'literal' ? 'literal' : (c.rightMode === 'const' ? 'constant' : 'other key'),
                   right: c.right || '',
                 }))
               : [],
@@ -8834,6 +9039,7 @@ async function sendAssistant(ev) {
 buildMarkerDefs();
 ensureStartNode();
 addStateRow('attempts', '0');
+renderConsts();
 renderSchemas();
 renderNodes();
 
